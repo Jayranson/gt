@@ -6347,7 +6347,7 @@ const WorkCalendar = ({ user, profile, onBack, showToast }) => {
 };
 
 const AdminPanel = ({ user, onBack, showToast }) => {
-    const [activeSection, setActiveSection] = useState('verification');
+    const [activeSection, setActiveSection] = useState(null);
     const [activeTab, setActiveTab] = useState('tradieVerification');
     const [verificationRequests, setVerificationRequests] = useState([]);
     const [selectedRequest, setSelectedRequest] = useState(null);
@@ -6778,10 +6778,22 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                         </div>
                     </div>
                 )}
+                    </div>
+                )}
 
-                {/* Testing Tools Tab */}
-                {activeTab === 'testing' && (
+                {/* Testing Tools Section */}
+                {activeSection === 'testing' && (
                     <div className="space-y-4">
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Testing Tools</h2>
+
                         <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
                             <h3 className="font-bold text-slate-900 mb-3">Development Tools</h3>
                             <div className="space-y-3">
@@ -6790,6 +6802,41 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                     Generate Test Users
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* User Management Section */}
+                {activeSection === 'userManagement' && (
+                    <div className="space-y-4">
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">User Management</h2>
+
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <h3 className="font-bold text-sm text-amber-900 mb-1">Coming Soon</h3>
+                                    <p className="text-xs text-amber-800 leading-relaxed">
+                                        User management tools will be available in a future update. This will include viewing user metadata, managing accounts, and platform moderation tools.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                            <Users size={48} className="mx-auto text-slate-300 mb-3" />
+                            <h3 className="font-bold text-slate-900 mb-1">User Management Tools</h3>
+                            <p className="text-sm text-slate-600">
+                                View verification metadata, manage user accounts, and access platform moderation tools.
+                            </p>
                         </div>
                     </div>
                 )}
