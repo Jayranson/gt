@@ -22,6 +22,8 @@ The screen should have:
 
 **IMPORTANT**: Delete ALL existing content in the editor first, then paste this:
 
+**UPDATED RULES (Fixed 403 error):**
+
 ```
 rules_version = '2';
 service firebase.storage {
@@ -34,12 +36,14 @@ service firebase.storage {
       allow create: if request.auth != null && request.auth.uid == userId
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
-      allow read: if isAdmin();
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       allow delete: if isAdmin();
     }
   }
 }
 ```
+
+**What changed:** Users can now read their own uploaded files (needed to get download URLs), and admin can read all files.
 
 ### Step 4: Click Publish
 After pasting, click the "Publish" button in the top right corner.

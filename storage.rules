@@ -12,8 +12,8 @@ service firebase.storage {
       allow create: if request.auth != null && request.auth.uid == userId
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
-      // Only admin can read verification documents
-      allow read: if isAdmin();
+      // Users can read their own files, admin can read all verification documents
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       // Only admin can delete verification documents
       allow delete: if isAdmin();
     }

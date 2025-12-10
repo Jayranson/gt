@@ -103,8 +103,8 @@ service firebase.storage {
                    && request.resource.size < 5 * 1024 * 1024  // Max 5MB
                    && request.resource.contentType.matches('image/.*');
       
-      // Only admin can read verification documents
-      allow read: if isAdmin();
+      // Users can read their own files (needed to get download URLs), admin can read all
+      allow read: if (request.auth != null && request.auth.uid == userId) || isAdmin();
       
       // Only admin can delete
       allow delete: if isAdmin();
