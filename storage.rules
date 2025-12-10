@@ -1,15 +1,20 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    // Admin check function
     function isAdmin() {
       return request.auth != null && request.auth.token.email == 'ranson.samsung@gmail.com';
     }
     
+    // Verification documents path: verifications/{userId}/{fileName}
     match /verifications/{userId}/{fileName} {
+      // Users can upload their own verification documents
       allow create: if request.auth != null && request.auth.uid == userId
                    && request.resource.size < 5 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
+      // Only admin can read verification documents
       allow read: if isAdmin();
+      // Only admin can delete verification documents
       allow delete: if isAdmin();
     }
   }
