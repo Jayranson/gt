@@ -6226,6 +6226,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
     const [verificationRequests, setVerificationRequests] = useState([]);
     const [selectedRequest, setSelectedRequest] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [requestToReject, setRequestToReject] = useState(null);
 
     // Check if user is admin
     const isAdmin = user?.email === ADMIN_EMAIL;
@@ -6290,12 +6293,30 @@ const AdminPanel = ({ user, onBack, showToast }) => {
 
             showToast("Verification request rejected", "success");
             setSelectedRequest(null);
+            setShowRejectModal(false);
+            setRejectionReason('');
+            setRequestToReject(null);
         } catch (error) {
             console.error("Error rejecting verification:", error);
             showToast("Failed to reject verification", "error");
         } finally {
             setLoading(false);
         }
+    };
+    
+    // Open reject modal
+    const openRejectModal = (request) => {
+        setRequestToReject(request);
+        setShowRejectModal(true);
+    };
+    
+    // Confirm rejection
+    const confirmReject = () => {
+        if (!rejectionReason.trim()) {
+            showToast("Please provide a reason for rejection", "error");
+            return;
+        }
+        handleReject(requestToReject.id, rejectionReason);
     };
 
     // Handle seed data (for testing)
@@ -6464,7 +6485,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                                 <Button
                                                     variant="danger"
                                                     className="flex-1 text-sm py-2"
-                                                    onClick={() => handleReject(request.id, 'Document not clear or invalid')}
+                                                    onClick={() => openRejectModal(request)}
                                                     disabled={loading}
                                                 >
                                                     <X size={16} />
@@ -6551,13 +6572,74 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                 <Button
                                     variant="danger"
                                     className="flex-1"
-                                    onClick={() => handleReject(selectedRequest.id, 'Document not clear or invalid')}
+                                    onClick={() => openRejectModal(selectedRequest)}
                                     disabled={loading}
                                 >
                                     <X size={18} />
                                     Reject
                                 </Button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Rejection Reason Modal */}
+            {showRejectModal && requestToReject && (
+                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4" onClick={() => setShowRejectModal(false)}>
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-slate-900">Reject Verification</h3>
+                            <button onClick={() => setShowRejectModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        <p className="text-sm text-slate-600 mb-4">
+                            Please provide a reason for rejecting <strong>{requestToReject.tradieName}'s</strong> verification request.
+                            This will help them understand what needs to be corrected.
+                        </p>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Rejection Reason</label>
+                            <textarea
+                                value={rejectionReason}
+                                onChange={(e) => setRejectionReason(e.target.value)}
+                                placeholder="e.g., Document is blurry, card expired, name doesn't match profile..."
+                                rows={4}
+                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none text-sm"
+                            />
+                        </div>
+                        
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                            <div className="flex items-start gap-2">
+                                <Info size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-800">
+                                    The tradie will be notified of the rejection and can resubmit with corrected documents.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="flex-1"
+                                onClick={() => {
+                                    setShowRejectModal(false);
+                                    setRejectionReason('');
+                                    setRequestToReject(null);
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="danger"
+                                className="flex-1"
+                                onClick={confirmReject}
+                                disabled={loading || !rejectionReason.trim()}
+                            >
+                                Confirm Rejection
+                            </Button>
                         </div>
                     </div>
                 </div>

@@ -135,6 +135,7 @@ service firebase.storage {
 - Only admins can view verification documents
 - Files are stored in isolated paths per user
 - File size is limited to 5MB per document
+- **CRITICAL**: The file size limit in `storage.rules` (5MB) MUST match the `MAX_VERIFICATION_FILE_SIZE` constant in App.tsx (line 84)
 
 ### 3. Data Privacy
 - Verification documents contain sensitive information (CSCS/ECS cards)
