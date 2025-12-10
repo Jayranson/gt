@@ -45,11 +45,20 @@ import {
   arrayUnion,
   writeBatch
 } from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref as storageRef, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
 
 // --- CONFIG & INIT ---
 // Note: Firebase initialization is deferred to ensure window.__firebase_config is set
-let app, auth, db;
+let app, auth, db, storage;
 let isFirebaseConfigured = false;
+
+// Admin email - only this user can access admin panel
+const ADMIN_EMAIL = 'ranson.samsung@gmail.com';
 
 // Function to initialize Firebase (called after window variables are guaranteed to be set)
 const initializeFirebase = () => {
@@ -63,6 +72,7 @@ const initializeFirebase = () => {
             app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
+            storage = getStorage(app);
             isFirebaseConfigured = true;
             console.log("Firebase initialized successfully");
         }
@@ -972,9 +982,12 @@ export default function App() {
             <h1 className="font-bold text-xl tracking-tight">Gay<span className="text-orange-500">Tradies</span></h1>
           </div>
           <div className="flex gap-3">
-             <button onClick={() => setView('admin')} className="p-1 hover:bg-slate-700 rounded text-slate-400">
-               <ShieldCheck size={18} />
-             </button>
+             {/* Admin shield only visible to admin user */}
+             {user?.email === ADMIN_EMAIL && (
+               <button onClick={() => setView('admin')} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                 <ShieldCheck size={18} />
+               </button>
+             )}
              <button className="relative p-1 hover:bg-slate-700 rounded transition-colors" onClick={() => setView('messages')}>
                <MessageCircle size={24} />
              </button>
@@ -3882,26 +3895,66 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
         showToast("Profile Updated!", "success");
     };
 
-    // UPDATED: Logic to handle Verification Request with actual file upload
+    // UPDATED: Logic to handle Verification Request with Firebase Storage upload
     const handleVerifySubmit = async () => {
         if (!verificationDocs.front || !verificationDocs.back) {
             showToast("Please upload both front and back of ID", "error");
             return;
         }
         
-        // In production, these would be uploaded to Firebase Storage or S3
-        // For now, we store them as base64 in the profile document
-        await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
-            verificationStatus: 'pending_review',
-            verificationDocuments: {
-                front: verificationDocs.front,
-                back: verificationDocs.back,
-                submittedAt: serverTimestamp()
-            }
-        });
-        setIsVerifying(false);
-        setVerificationDocs({ front: null, back: null });
-        showToast("Documents sent for review!", "success");
+        if (!storage) {
+            showToast("Storage not initialized", "error");
+            return;
+        }
+        
+        try {
+            showToast("Uploading documents securely...", "info");
+            
+            // Convert base64 to blob for upload
+            const frontBlob = await fetch(verificationDocs.front).then(r => r.blob());
+            const backBlob = await fetch(verificationDocs.back).then(r => r.blob());
+            
+            // Create unique file names with timestamp
+            const timestamp = Date.now();
+            const frontFileName = `verifications/${user.uid}/cscs_front_${timestamp}.jpg`;
+            const backFileName = `verifications/${user.uid}/cscs_back_${timestamp}.jpg`;
+            
+            // Upload to Firebase Storage
+            const frontRef = storageRef(storage, frontFileName);
+            const backRef = storageRef(storage, backFileName);
+            
+            await uploadBytes(frontRef, frontBlob);
+            await uploadBytes(backRef, backBlob);
+            
+            // Get download URLs
+            const frontUrl = await getDownloadURL(frontRef);
+            const backUrl = await getDownloadURL(backRef);
+            
+            // Create verification request in Firestore
+            await addDoc(collection(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests'), {
+                tradieUid: user.uid,
+                tradieName: profile.name || profile.username,
+                trade: profile.trade || 'Not specified',
+                cardImageUrl: frontUrl, // Primary image for preview
+                cardImageBackUrl: backUrl,
+                status: 'pending',
+                createdAt: serverTimestamp(),
+                notes: `Trade: ${profile.trade || 'Not specified'}`
+            });
+            
+            // Update profile to indicate verification is pending
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                verificationStatus: 'pending',
+                verificationRequestedAt: serverTimestamp()
+            });
+            
+            setIsVerifying(false);
+            setVerificationDocs({ front: null, back: null });
+            showToast("Verification request submitted!", "success");
+        } catch (error) {
+            console.error("Error submitting verification:", error);
+            showToast("Failed to submit verification request", "error");
+        }
     };
 
     const handleVerificationUpload = (e, side) => {
@@ -6169,10 +6222,84 @@ const WorkCalendar = ({ user, profile, onBack, showToast }) => {
 };
 
 const AdminPanel = ({ user, onBack, showToast }) => {
-    const handleVerifySelf = async () => { await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), { verified: true }); showToast("Verified!", "success"); onBack(); };
+    const [activeTab, setActiveTab] = useState('tradieVerification');
+    const [verificationRequests, setVerificationRequests] = useState([]);
+    const [selectedRequest, setSelectedRequest] = useState(null);
+    const [loading, setLoading] = useState(false);
+
+    // Check if user is admin
+    const isAdmin = user?.email === ADMIN_EMAIL;
+
+    // Fetch verification requests
+    useEffect(() => {
+        if (!user || !db || !isAdmin) return;
+        
+        const q = query(
+            collection(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests'),
+            where('status', '==', 'pending'),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setVerificationRequests(requests);
+        }, (error) => {
+            console.error("Error fetching verification requests:", error);
+        });
+        
+        return () => unsub();
+    }, [user, isAdmin]);
+
+    // Approve verification
+    const handleApprove = async (requestId, tradieUid) => {
+        setLoading(true);
+        try {
+            // Update the verification request
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
+                status: 'approved',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp()
+            });
+
+            // Update tradie profile to verified
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', tradieUid), {
+                verified: true,
+                verifiedAt: serverTimestamp()
+            });
+
+            showToast("Tradie verified successfully!", "success");
+            setSelectedRequest(null);
+        } catch (error) {
+            console.error("Error approving verification:", error);
+            showToast("Failed to approve verification", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reject verification
+    const handleReject = async (requestId, reason = '') => {
+        setLoading(true);
+        try {
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
+                status: 'rejected',
+                rejectionReason: reason,
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp()
+            });
+
+            showToast("Verification request rejected", "success");
+            setSelectedRequest(null);
+        } catch (error) {
+            console.error("Error rejecting verification:", error);
+            showToast("Failed to reject verification", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle seed data (for testing)
     const handleSeedData = async () => {
-        // Updated mock data structure with varied GPS locations for distance testing
-        // Centered around London (51.5074, -0.1278) with varying distances
         const dummyTradies = [
             { uid: 'mock_t1', name: 'Jake Builder', age: 29, role: 'tradie', trade: 'Carpenter', verified: true, location: 'Central London', latitude: 51.5074, longitude: -0.1278, bio: 'Reliable chippy. Quality work.', rate: 45, reviews: 12, rating: 4.8, sexuality: 'Gay', primaryPhoto: null },
             { uid: 'mock_t2', name: 'Mike Spark', age: 34, role: 'tradie', trade: 'Electrician', verified: true, location: 'East London', latitude: 51.5155, longitude: -0.0922, bio: 'Fully qualified sparky. 15 years experience.', rate: 60, reviews: 24, rating: 5.0, sexuality: 'Bi', primaryPhoto: null },
@@ -6192,15 +6319,249 @@ const AdminPanel = ({ user, onBack, showToast }) => {
         showToast("Test users created with GPS data!", "success");
     };
 
-    return (
-        <div className="h-screen bg-slate-50 p-4">
-            <div className="flex items-center gap-2 mb-6"><button onClick={onBack}><ArrowRight className="rotate-180" /></button><h1 className="font-bold text-xl">Admin Dashboard</h1></div>
-            <div className="bg-white rounded-xl shadow p-4 mb-4">
-                 <div className="space-y-3">
-                     <Button onClick={handleVerifySelf} variant="secondary" className="w-full gap-2"><CheckCircle size={18} /> Verify My Profile for test</Button>
-                     <Button onClick={handleSeedData} variant="primary" className="w-full gap-2"><Database size={18} /> Generate Test Users for test</Button>
-                 </div>
+    // If not admin, show access denied
+    if (!isAdmin) {
+        return (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+                    <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Access Denied</h2>
+                    <p className="text-slate-600 mb-6">You don't have permission to access the admin panel.</p>
+                    <Button onClick={onBack} variant="primary" className="w-full">
+                        Go Back
+                    </Button>
+                </div>
             </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-slate-50 pb-20">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white sticky top-0 z-40 shadow-lg">
+                <div className="p-4 flex items-center gap-3">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-700 rounded-lg transition-colors">
+                        <ArrowRight className="rotate-180" size={20} />
+                    </button>
+                    <div className="flex-1">
+                        <h1 className="text-xl font-bold">Admin Control Panel</h1>
+                        <p className="text-xs opacity-90">System Administration</p>
+                    </div>
+                    <Shield size={24} className="text-orange-500" />
+                </div>
+
+                {/* Tab Navigation */}
+                <div className="px-4 pb-3 flex gap-2 overflow-x-auto">
+                    <button
+                        onClick={() => setActiveTab('tradieVerification')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                            activeTab === 'tradieVerification'
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                    >
+                        Tradie Verification
+                        {verificationRequests.length > 0 && (
+                            <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
+                                {verificationRequests.length}
+                            </span>
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('profilePictures')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                            activeTab === 'profilePictures'
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                    >
+                        Profile Pictures
+                        <span className="ml-2 text-xs opacity-75">(Coming Soon)</span>
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('testing')}
+                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                            activeTab === 'testing'
+                                ? 'bg-orange-500 text-white'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                        }`}
+                    >
+                        Testing Tools
+                    </button>
+                </div>
+            </div>
+
+            <div className="p-4">
+                {/* Tradie Verification Tab */}
+                {activeTab === 'tradieVerification' && (
+                    <div className="space-y-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <h3 className="font-bold text-sm text-blue-900 mb-1">Tradie Verification</h3>
+                                    <p className="text-xs text-blue-800 leading-relaxed">
+                                        Review and approve tradie verification requests. Tradies must upload CSCS or ECS cards for verification.
+                                        Documents are encrypted and stored securely in Firebase Storage.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {verificationRequests.length === 0 ? (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                                <UserCheck size={48} className="mx-auto text-slate-300 mb-3" />
+                                <h3 className="font-bold text-slate-900 mb-1">No Pending Requests</h3>
+                                <p className="text-sm text-slate-600">All verification requests have been processed.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {verificationRequests.map((request) => (
+                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <div className="p-4">
+                                            <div className="flex items-start justify-between mb-3">
+                                                <div>
+                                                    <h3 className="font-bold text-slate-900">{request.tradieName}</h3>
+                                                    <p className="text-sm text-slate-600">{request.trade}</p>
+                                                    <p className="text-xs text-slate-400 mt-1">
+                                                        Submitted: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                    </p>
+                                                </div>
+                                                <Badge type="pending" text="Pending" />
+                                            </div>
+
+                                            {/* Document Preview */}
+                                            {request.cardImageUrl && (
+                                                <div className="mb-3 bg-slate-50 rounded-lg p-2">
+                                                    <p className="text-xs font-bold text-slate-700 mb-2">Uploaded Document:</p>
+                                                    <img 
+                                                        src={request.cardImageUrl} 
+                                                        alt="Verification document" 
+                                                        className="w-full rounded border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                                        onClick={() => setSelectedRequest(request)}
+                                                    />
+                                                    <p className="text-xs text-slate-500 mt-1">Click to view full size</p>
+                                                </div>
+                                            )}
+
+                                            {request.notes && (
+                                                <div className="mb-3 bg-slate-50 rounded-lg p-3">
+                                                    <p className="text-xs font-bold text-slate-700 mb-1">Notes:</p>
+                                                    <p className="text-sm text-slate-600">{request.notes}</p>
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="success"
+                                                    className="flex-1 text-sm py-2"
+                                                    onClick={() => handleApprove(request.id, request.tradieUid)}
+                                                    disabled={loading}
+                                                >
+                                                    <CheckCircle size={16} />
+                                                    Approve
+                                                </Button>
+                                                <Button
+                                                    variant="danger"
+                                                    className="flex-1 text-sm py-2"
+                                                    onClick={() => handleReject(request.id, 'Document not clear or invalid')}
+                                                    disabled={loading}
+                                                >
+                                                    <X size={16} />
+                                                    Reject
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Profile Pictures Tab (Placeholder) */}
+                {activeTab === 'profilePictures' && (
+                    <div className="space-y-4">
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <h3 className="font-bold text-sm text-amber-900 mb-1">Coming Soon</h3>
+                                    <p className="text-xs text-amber-800 leading-relaxed">
+                                        Profile picture verification will be available in a future update.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                            <ImageIcon size={48} className="mx-auto text-slate-300 mb-3" />
+                            <h3 className="font-bold text-slate-900 mb-1">Profile Picture Verification</h3>
+                            <p className="text-sm text-slate-600">
+                                This feature will allow you to review and approve user profile pictures.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                {/* Testing Tools Tab */}
+                {activeTab === 'testing' && (
+                    <div className="space-y-4">
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                            <h3 className="font-bold text-slate-900 mb-3">Development Tools</h3>
+                            <div className="space-y-3">
+                                <Button onClick={handleSeedData} variant="primary" className="w-full">
+                                    <Database size={18} />
+                                    Generate Test Users
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Full Image Modal */}
+            {selectedRequest && (
+                <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedRequest(null)}>
+                    <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setSelectedRequest(null)}
+                            className="absolute -top-12 right-0 bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                        <img
+                            src={selectedRequest.cardImageUrl}
+                            alt="Verification document full size"
+                            className="w-full rounded-lg"
+                        />
+                        <div className="bg-white rounded-lg p-4 mt-4">
+                            <h3 className="font-bold text-slate-900 mb-2">{selectedRequest.tradieName}</h3>
+                            <p className="text-sm text-slate-600 mb-3">{selectedRequest.trade}</p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="success"
+                                    className="flex-1"
+                                    onClick={() => handleApprove(selectedRequest.id, selectedRequest.tradieUid)}
+                                    disabled={loading}
+                                >
+                                    <CheckCircle size={18} />
+                                    Approve Verification
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    className="flex-1"
+                                    onClick={() => handleReject(selectedRequest.id, 'Document not clear or invalid')}
+                                    disabled={loading}
+                                >
+                                    <X size={18} />
+                                    Reject
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
