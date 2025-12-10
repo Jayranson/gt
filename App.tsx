@@ -49,7 +49,8 @@ import {
   getStorage, 
   ref as storageRef, 
   uploadBytes, 
-  getDownloadURL 
+  getDownloadURL,
+  deleteObject
 } from 'firebase/storage';
 
 // --- CONFIG & INIT ---
@@ -4230,6 +4231,130 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                         )}
                     </div>
                 )}
+                
+                {/* Verification Approval Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'verification_approved' && !n.read) && (
+                    <div className="mt-4 w-full bg-green-50 border-2 border-green-500 p-4 rounded-xl animate-in fade-in">
+                        <div className="flex items-start gap-3">
+                            <div className="bg-green-500 text-white p-2 rounded-full flex-shrink-0">
+                                <CheckCircle size={20} />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-green-900 text-sm">Verification Approved!</h4>
+                                <p className="text-xs text-green-800 mt-1">
+                                    Your tradie verification has been approved. You now have a verified badge on your profile.
+                                </p>
+                                <button
+                                    onClick={async () => {
+                                        // Mark notification as read
+                                        const updatedNotifications = profile.notifications.map(n =>
+                                            n.type === 'verification_approved' ? { ...n, read: true } : n
+                                        );
+                                        await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                            notifications: updatedNotifications
+                                        });
+                                    }}
+                                    className="mt-2 text-xs font-bold text-green-700 hover:text-green-900 underline"
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Verification Rejection Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'verification_rejected' && !n.read) && (() => {
+                    const rejectionNotif = profile.notifications.find(n => n.type === 'verification_rejected' && !n.read);
+                    return (
+                        <div className="mt-4 w-full bg-red-50 border-2 border-red-500 p-4 rounded-xl animate-in fade-in">
+                            <div className="flex items-start gap-3">
+                                <div className="bg-red-500 text-white p-2 rounded-full flex-shrink-0">
+                                    <X size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-red-900 text-sm">Verification Rejected</h4>
+                                    <p className="text-xs text-red-800 mt-1 font-medium">
+                                        Reason: {rejectionNotif.message}
+                                    </p>
+                                    <p className="text-xs text-red-700 mt-2">
+                                        Please review the feedback and submit again with corrected documents.
+                                    </p>
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={() => setIsVerifying(true)}
+                                            className="text-xs font-bold bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors"
+                                        >
+                                            Resubmit Documents
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                // Mark notification as read
+                                                const updatedNotifications = profile.notifications.map(n =>
+                                                    n.type === 'verification_rejected' ? { ...n, read: true } : n
+                                                );
+                                                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                                    notifications: updatedNotifications
+                                                });
+                                            }}
+                                            className="text-xs font-bold text-red-700 hover:text-red-900 underline"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Profile Picture Rejection Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'profile_picture_rejected' && !n.read) && (() => {
+                    const rejectionNotif = profile.notifications.find(n => n.type === 'profile_picture_rejected' && !n.read);
+                    return (
+                        <div className="mt-4 w-full bg-amber-50 border-2 border-amber-500 p-4 rounded-xl animate-in fade-in">
+                            <div className="flex items-start gap-3">
+                                <div className="bg-amber-500 text-white p-2 rounded-full flex-shrink-0">
+                                    <ImageIcon size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-amber-900 text-sm">Profile Picture Rejected</h4>
+                                    <p className="text-xs text-amber-800 mt-1 font-medium">
+                                        Reason: {rejectionNotif.message}
+                                    </p>
+                                    <p className="text-xs text-amber-700 mt-2">
+                                        Please upload a different profile picture that meets our guidelines.
+                                    </p>
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={() => {
+                                                setIsEditing(true);
+                                                // Auto-scroll or focus on photo upload
+                                            }}
+                                            className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition-colors"
+                                        >
+                                            Upload New Photo
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                // Mark notification as read
+                                                const updatedNotifications = profile.notifications.map(n =>
+                                                    n.type === 'profile_picture_rejected' ? { ...n, read: true } : n
+                                                );
+                                                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                                    notifications: updatedNotifications
+                                                });
+                                            }}
+                                            className="text-xs font-bold text-amber-700 hover:text-amber-900 underline"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
             <div className="space-y-2 mb-8">
                 <ProfileLink icon={Settings} label="Settings" onClick={() => onNavigate('settings')} />
@@ -6222,6 +6347,7 @@ const WorkCalendar = ({ user, profile, onBack, showToast }) => {
 };
 
 const AdminPanel = ({ user, onBack, showToast }) => {
+    const [activeSection, setActiveSection] = useState('verification');
     const [activeTab, setActiveTab] = useState('tradieVerification');
     const [verificationRequests, setVerificationRequests] = useState([]);
     const [selectedRequest, setSelectedRequest] = useState(null);
@@ -6258,20 +6384,67 @@ const AdminPanel = ({ user, onBack, showToast }) => {
     const handleApprove = async (requestId, tradieUid) => {
         setLoading(true);
         try {
-            // Update the verification request
+            const request = verificationRequests.find(r => r.id === requestId);
+            
+            // Extract metadata from uploaded documents before deletion
+            const verificationMetadata = {
+                documentType: 'CSCS/ECS Card',
+                trade: request?.trade || 'Not specified',
+                tradieName: request?.tradieName || 'Unknown',
+                verifiedAt: new Date().toISOString(),
+                verifiedBy: user.uid,
+                verifiedByEmail: user.email,
+                verificationMethod: 'Document Upload',
+                submittedAt: request?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+                // Store references to original upload locations (for audit trail)
+                originalUploadPaths: {
+                    front: request?.cardImageUrl ? new URL(request.cardImageUrl).pathname : null,
+                    back: request?.cardImageBackUrl ? new URL(request.cardImageBackUrl).pathname : null
+                },
+                notes: request?.notes || ''
+            };
+
+            // Update the verification request to approved
             await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
                 status: 'approved',
                 reviewedBy: user.uid,
-                reviewedAt: serverTimestamp()
+                reviewedAt: serverTimestamp(),
+                documentsDeleted: true
             });
 
-            // Update tradie profile to verified
+            // Update tradie profile with verification status and metadata
             await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', tradieUid), {
                 verified: true,
-                verifiedAt: serverTimestamp()
+                verifiedAt: serverTimestamp(),
+                verificationMetadata: verificationMetadata,
+                // Add notification for the user
+                notifications: arrayUnion({
+                    type: 'verification_approved',
+                    title: 'Verification Approved!',
+                    message: 'Your tradie verification has been approved. You now have a verified badge on your profile.',
+                    timestamp: serverTimestamp(),
+                    read: false,
+                    icon: 'check-circle'
+                })
             });
 
-            showToast("Tradie verified successfully!", "success");
+            // Delete uploaded images from Firebase Storage
+            try {
+                if (request?.cardImageUrl) {
+                    const frontRef = storageRef(storage, new URL(request.cardImageUrl).pathname);
+                    await deleteObject(frontRef);
+                }
+                if (request?.cardImageBackUrl) {
+                    const backRef = storageRef(storage, new URL(request.cardImageBackUrl).pathname);
+                    await deleteObject(backRef);
+                }
+                console.log("Verification documents deleted successfully");
+            } catch (deleteError) {
+                console.error("Error deleting verification documents:", deleteError);
+                // Continue even if deletion fails - verification is still approved
+            }
+
+            showToast("Tradie verified! Documents deleted, metadata stored.", "success");
             setSelectedRequest(null);
         } catch (error) {
             console.error("Error approving verification:", error);
@@ -6285,12 +6458,29 @@ const AdminPanel = ({ user, onBack, showToast }) => {
     const handleReject = async (requestId, reason = '') => {
         setLoading(true);
         try {
+            const request = verificationRequests.find(r => r.id === requestId);
+            
             await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
                 status: 'rejected',
                 rejectionReason: reason,
                 reviewedBy: user.uid,
                 reviewedAt: serverTimestamp()
             });
+
+            // Add rejection notification to user profile
+            if (request?.tradieUid) {
+                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', request.tradieUid), {
+                    verificationStatus: 'rejected',
+                    notifications: arrayUnion({
+                        type: 'verification_rejected',
+                        title: 'Verification Rejected',
+                        message: reason || 'Your verification was rejected. Please review and resubmit with correct documents.',
+                        timestamp: serverTimestamp(),
+                        read: false,
+                        icon: 'x-circle'
+                    })
+                });
+            }
 
             showToast("Verification request rejected", "success");
             setSelectedRequest(null);
@@ -6341,6 +6531,31 @@ const AdminPanel = ({ user, onBack, showToast }) => {
         showToast("Test users created with GPS data!", "success");
     };
 
+    // Menu options
+    const menuOptions = [
+        {
+            id: 'verification',
+            title: 'Verification',
+            icon: ShieldCheck,
+            badge: verificationRequests.length > 0 ? verificationRequests.length : null,
+            description: 'Manage user verification requests'
+        },
+        {
+            id: 'userManagement',
+            title: 'User Management',
+            icon: Users,
+            badge: null,
+            description: 'Manage users and platform tools'
+        },
+        {
+            id: 'testing',
+            title: 'Testing Tools',
+            icon: Database,
+            badge: null,
+            description: 'Development and testing utilities'
+        }
+    ];
+
     // If not admin, show access denied
     if (!isAdmin) {
         return (
@@ -6371,83 +6586,121 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                     </div>
                     <Shield size={24} className="text-orange-500" />
                 </div>
-
-                {/* Tab Navigation */}
-                <div className="px-4 pb-3 flex gap-2 overflow-x-auto">
-                    <button
-                        onClick={() => setActiveTab('tradieVerification')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                            activeTab === 'tradieVerification'
-                                ? 'bg-orange-500 text-white'
-                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                    >
-                        Tradie Verification
-                        {verificationRequests.length > 0 && (
-                            <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
-                                {verificationRequests.length}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('profilePictures')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                            activeTab === 'profilePictures'
-                                ? 'bg-orange-500 text-white'
-                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                    >
-                        Profile Pictures
-                        <span className="ml-2 text-xs opacity-75">(Coming Soon)</span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('testing')}
-                        className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
-                            activeTab === 'testing'
-                                ? 'bg-orange-500 text-white'
-                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                        }`}
-                    >
-                        Testing Tools
-                    </button>
-                </div>
             </div>
 
             <div className="p-4">
-                {/* Tradie Verification Tab */}
-                {activeTab === 'tradieVerification' && (
+                {/* Menu Options (when no section is selected) */}
+                {activeSection === null && (
+                    <div className="space-y-3">
+                        {menuOptions.map((option) => {
+                            const Icon = option.icon;
+                            return (
+                                <button
+                                    key={option.id}
+                                    onClick={() => setActiveSection(option.id)}
+                                    className="w-full bg-white rounded-xl shadow-sm border border-slate-100 p-4 hover:border-orange-500 hover:shadow-md transition-all text-left"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-orange-50 p-3 rounded-lg">
+                                                <Icon size={24} className="text-orange-600" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900">{option.title}</h3>
+                                                <p className="text-xs text-slate-600">{option.description}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {option.badge !== null && (
+                                                <span className="bg-red-500 text-white px-2.5 py-1 rounded-full text-xs font-bold">
+                                                    {option.badge}
+                                                </span>
+                                            )}
+                                            <ChevronRight size={20} className="text-slate-400" />
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Verification Section */}
+                {activeSection === 'verification' && (
                     <div className="space-y-4">
-                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                            <div className="flex items-start gap-3">
-                                <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
-                                <div>
-                                    <h3 className="font-bold text-sm text-blue-900 mb-1">Tradie Verification</h3>
-                                    <p className="text-xs text-blue-800 leading-relaxed">
-                                        Review and approve tradie verification requests. Tradies must upload CSCS or ECS cards for verification.
-                                        Documents are encrypted and stored securely in Firebase Storage.
-                                    </p>
-                                </div>
-                            </div>
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Verification</h2>
+
+                        {/* Sub-tabs */}
+                        <div className="flex gap-2 overflow-x-auto mb-4">
+                            <button
+                                onClick={() => setActiveTab('tradieVerification')}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                                    activeTab === 'tradieVerification'
+                                        ? 'bg-orange-500 text-white'
+                                        : 'bg-white text-slate-700 border border-slate-200 hover:border-orange-500'
+                                }`}
+                            >
+                                Tradie Verification
+                                {verificationRequests.length > 0 && (
+                                    <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
+                                        {verificationRequests.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('profilePictures')}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                                    activeTab === 'profilePictures'
+                                        ? 'bg-orange-500 text-white'
+                                        : 'bg-white text-slate-700 border border-slate-200 hover:border-orange-500'
+                                }`}
+                            >
+                                Profile Pictures
+                                <span className="ml-2 text-xs opacity-75">(Soon)</span>
+                            </button>
                         </div>
 
-                        {verificationRequests.length === 0 ? (
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
-                                <UserCheck size={48} className="mx-auto text-slate-300 mb-3" />
-                                <h3 className="font-bold text-slate-900 mb-1">No Pending Requests</h3>
-                                <p className="text-sm text-slate-600">All verification requests have been processed.</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {verificationRequests.map((request) => (
-                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                                        <div className="p-4">
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-900">{request.tradieName}</h3>
-                                                    <p className="text-sm text-slate-600">{request.trade}</p>
-                                                    <p className="text-xs text-slate-400 mt-1">
-                                                        Submitted: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
-                                                    </p>
+                        {/* Tradie Verification Content */}
+                        {activeTab === 'tradieVerification' && (
+                            <div className="space-y-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <h3 className="font-bold text-sm text-blue-900 mb-1">Tradie Verification</h3>
+                                            <p className="text-xs text-blue-800 leading-relaxed">
+                                                Review and approve tradie verification requests. Documents are encrypted and stored securely. After approval, metadata is saved to the user's profile.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {verificationRequests.length === 0 ? (
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                                        <UserCheck size={48} className="mx-auto text-slate-300 mb-3" />
+                                        <h3 className="font-bold text-slate-900 mb-1">No Pending Requests</h3>
+                                        <p className="text-sm text-slate-600">All verification requests have been processed.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {verificationRequests.map((request) => (
+                                            <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                                <div className="p-4">
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div>
+                                                            <h3 className="font-bold text-slate-900">{request.tradieName}</h3>
+                                                            <p className="text-sm text-slate-600">{request.trade}</p>
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                Submitted: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                            </p>
                                                 </div>
                                                 <Badge type="pending" text="Pending" />
                                             </div>
