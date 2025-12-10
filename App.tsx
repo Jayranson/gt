@@ -6248,6 +6248,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
             setVerificationRequests(requests);
         }, (error) => {
             console.error("Error fetching verification requests:", error);
+            showToast("Failed to load verification requests. Check Firebase rules.", "error");
         });
         
         return () => unsub();
@@ -6615,7 +6616,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             <div className="flex items-start gap-2">
                                 <Info size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-amber-800">
-                                    The tradie will be notified of the rejection and can resubmit with corrected documents.
+                                    The rejection reason will be stored with the request. Consider implementing email notifications in the future to inform tradies automatically.
                                 </p>
                             </div>
                         </div>
