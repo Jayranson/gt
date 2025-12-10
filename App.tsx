@@ -3988,18 +3988,32 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
             try {
                 let imageData = event.target.result;
                 
-                // Always compress to 10KB target size
-                imageData = await compressImage(imageData, 10 * 1024); // 10KB
+                // Compress to 30KB target size for better quality
+                imageData = await compressImage(imageData, 30 * 1024); // 30KB
                 
                 // Update local state first
                 setEditData(prev => ({...prev, [field]: imageData}));
                 
-                // Then save to Firebase and wait for completion
+                // Save to Firebase
                 await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
                     [field]: imageData
                 });
                 
-                showToast("Image uploaded successfully!", "success");
+                // If uploading primary photo, create verification request
+                if (field === 'primaryPhoto') {
+                    await addDoc(collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'), {
+                        userId: user.uid,
+                        username: profile.username || profile.name || 'Unknown',
+                        name: profile.name || profile.username || 'Unknown',
+                        photoData: imageData,
+                        status: 'pending',
+                        createdAt: new Date(),
+                        uploadedAt: new Date()
+                    });
+                    showToast("Profile picture uploaded! Pending admin review.", "info");
+                } else {
+                    showToast("Image uploaded successfully!", "success");
+                }
             } catch (error) {
                 console.error("Error uploading image:", error);
                 showToast("Failed to upload image", "error");
@@ -4020,12 +4034,12 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 // Estimate current size and calculate aggressive scaling if needed
                 const currentSize = base64Image.length * BASE64_SIZE_RATIO;
                 
-                // Start with aggressive downscaling for 10KB target
+                // Start with aggressive downscaling for small targets
                 if (currentSize > targetSizeBytes) {
-                    // Use more aggressive scaling factor for small targets like 10KB
-                    const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.8;
-                    width = Math.max(50, Math.floor(width * scaleFactor)); // Minimum 50px
-                    height = Math.max(50, Math.floor(height * scaleFactor));
+                    // Adjusted scaling for 30KB target - allows better quality
+                    const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.85;
+                    width = Math.max(100, Math.floor(width * scaleFactor)); // Minimum 100px for profile pics
+                    height = Math.max(100, Math.floor(height * scaleFactor));
                 }
                 
                 canvas.width = width;
@@ -4035,7 +4049,7 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 ctx.drawImage(img, 0, 0, width, height);
                 
                 // Compress with quality adjustment to hit target size
-                let quality = 0.7; // Start with lower quality for 10KB target
+                let quality = 0.8; // Start with higher quality for 30KB target
                 let compressedData = canvas.toDataURL('image/jpeg', quality);
                 
                 // Reduce quality until we're under target size
@@ -6350,7 +6364,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
     const [activeSection, setActiveSection] = useState(null);
     const [activeTab, setActiveTab] = useState('tradieVerification');
     const [verificationRequests, setVerificationRequests] = useState([]);
+    const [profilePictureRequests, setProfilePictureRequests] = useState([]);
     const [selectedRequest, setSelectedRequest] = useState(null);
+    const [selectedPicture, setSelectedPicture] = useState(null);
     const [loading, setLoading] = useState(false);
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
@@ -6375,6 +6391,26 @@ const AdminPanel = ({ user, onBack, showToast }) => {
         }, (error) => {
             console.error("Error fetching verification requests:", error);
             showToast("Failed to load verification requests. Check Firebase rules.", "error");
+        });
+        
+        return () => unsub();
+    }, [user, isAdmin]);
+
+    // Fetch profile picture requests
+    useEffect(() => {
+        if (!user || !db || !isAdmin) return;
+        
+        const q = query(
+            collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'),
+            where('status', '==', 'pending'),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setProfilePictureRequests(requests);
+        }, (error) => {
+            console.error("Error fetching profile picture requests:", error);
         });
         
         return () => unsub();
@@ -6510,6 +6546,109 @@ const AdminPanel = ({ user, onBack, showToast }) => {
         handleReject(requestToReject.id, rejectionReason);
     };
 
+    // Approve profile picture
+    const handleApproveProfilePicture = async (requestId, userId) => {
+        setLoading(true);
+        try {
+            // Update the request status
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests', requestId), {
+                status: 'approved',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp()
+            });
+
+            // Add approval notification to user's profile
+            const userProfileRef = doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId);
+            const userProfileSnap = await getDoc(userProfileRef);
+            const existingNotifications = userProfileSnap.data()?.notifications || [];
+            
+            await updateDoc(userProfileRef, {
+                notifications: [
+                    {
+                        type: 'profile_picture_approved',
+                        message: 'Your profile picture has been approved!',
+                        timestamp: new Date(),
+                        read: false
+                    },
+                    ...existingNotifications
+                ]
+            });
+
+            showToast("Profile picture approved", "success");
+            setSelectedPicture(null);
+        } catch (error) {
+            console.error("Error approving profile picture:", error);
+            showToast("Failed to approve profile picture", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reject profile picture
+    const handleRejectProfilePicture = async (requestId, userId, reason) => {
+        setLoading(true);
+        try {
+            const request = profilePictureRequests.find(r => r.id === requestId);
+            
+            // Update request status
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests', requestId), {
+                status: 'rejected',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp(),
+                rejectionReason: reason
+            });
+
+            // Delete the profile picture from user's profile
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId), {
+                primaryPhoto: null
+            });
+
+            // Add rejection notification to user's profile
+            const userProfileRef = doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId);
+            const userProfileSnap = await getDoc(userProfileRef);
+            const existingNotifications = userProfileSnap.data()?.notifications || [];
+            
+            await updateDoc(userProfileRef, {
+                notifications: [
+                    {
+                        type: 'profile_picture_rejected',
+                        message: 'Your profile picture was rejected',
+                        reason: reason,
+                        timestamp: new Date(),
+                        read: false
+                    },
+                    ...existingNotifications
+                ]
+            });
+
+            showToast("Profile picture rejected and deleted", "success");
+            setSelectedPicture(null);
+            setShowRejectModal(false);
+            setRejectionReason('');
+            setRequestToReject(null);
+        } catch (error) {
+            console.error("Error rejecting profile picture:", error);
+            showToast("Failed to reject profile picture", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Open reject modal for profile pictures
+    const openRejectModalProfilePicture = (request) => {
+        setRequestToReject(request);
+        setShowRejectModal(true);
+    };
+
+    // Confirm profile picture rejection
+    const confirmRejectProfilePicture = () => {
+        if (!rejectionReason.trim()) {
+            showToast("Please provide a reason for rejection", "error");
+            return;
+        }
+        handleRejectProfilePicture(requestToReject.id, requestToReject.userId, rejectionReason);
+    };
+
     // Handle seed data (for testing)
     const handleSeedData = async () => {
         const dummyTradies = [
@@ -6537,7 +6676,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
             id: 'verification',
             title: 'Verification',
             icon: ShieldCheck,
-            badge: verificationRequests.length > 0 ? verificationRequests.length : null,
+            badge: (verificationRequests.length + profilePictureRequests.length) > 0 
+                ? verificationRequests.length + profilePictureRequests.length 
+                : null,
             description: 'Manage user verification requests'
         },
         {
@@ -6664,7 +6805,11 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                 }`}
                             >
                                 Profile Pictures
-                                <span className="ml-2 text-xs opacity-75">(Soon)</span>
+                                {profilePictureRequests.length > 0 && (
+                                    <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
+                                        {profilePictureRequests.length}
+                                    </span>
+                                )}
                             </button>
                         </div>
 
@@ -6754,28 +6899,73 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                     </div>
                 )}
 
-                {/* Profile Pictures Tab (Placeholder) */}
+                {/* Profile Pictures Tab */}
                 {activeTab === 'profilePictures' && (
                     <div className="space-y-4">
-                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                             <div className="flex items-start gap-3">
-                                <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
                                 <div>
-                                    <h3 className="font-bold text-sm text-amber-900 mb-1">Coming Soon</h3>
-                                    <p className="text-xs text-amber-800 leading-relaxed">
-                                        Profile picture verification will be available in a future update.
+                                    <h3 className="font-bold text-sm text-blue-900 mb-1">Profile Picture Review</h3>
+                                    <p className="text-xs text-blue-800 leading-relaxed">
+                                        Review user profile pictures. Approve appropriate photos or reject with a reason. Rejected photos are automatically deleted.
                                     </p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
-                            <ImageIcon size={48} className="mx-auto text-slate-300 mb-3" />
-                            <h3 className="font-bold text-slate-900 mb-1">Profile Picture Verification</h3>
-                            <p className="text-sm text-slate-600">
-                                This feature will allow you to review and approve user profile pictures.
-                            </p>
-                        </div>
+                        {profilePictureRequests.length === 0 ? (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                                <CheckCircle size={48} className="mx-auto text-slate-300 mb-3" />
+                                <h3 className="font-bold text-slate-900 mb-1">No Pending Reviews</h3>
+                                <p className="text-sm text-slate-600">
+                                    All profile pictures have been reviewed.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {profilePictureRequests.map((request) => (
+                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                        <div 
+                                            className="aspect-square bg-slate-100 cursor-pointer hover:opacity-90 transition-opacity"
+                                            onClick={() => setSelectedPicture(request)}
+                                        >
+                                            <img
+                                                src={request.photoData}
+                                                alt={request.name}
+                                                className="w-full h-full object-cover"
+                                            />
+                                        </div>
+                                        <div className="p-4">
+                                            <h3 className="font-bold text-slate-900 mb-1">{request.name}</h3>
+                                            <p className="text-xs text-slate-500 mb-3">
+                                                @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                            </p>
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="success"
+                                                    className="flex-1 text-sm"
+                                                    onClick={() => handleApproveProfilePicture(request.id, request.userId)}
+                                                    disabled={loading}
+                                                >
+                                                    <CheckCircle size={16} />
+                                                    Approve
+                                                </Button>
+                                                <Button
+                                                    variant="danger"
+                                                    className="flex-1 text-sm"
+                                                    onClick={() => openRejectModalProfilePicture(request)}
+                                                    disabled={loading}
+                                                >
+                                                    <X size={16} />
+                                                    Reject
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 )}
                     </div>
@@ -6885,20 +7075,65 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                 </div>
             )}
 
+            {/* Profile Picture Full View Modal */}
+            {selectedPicture && (
+                <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedPicture(null)}>
+                    <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setSelectedPicture(null)}
+                            className="absolute -top-12 right-0 bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                        <img
+                            src={selectedPicture.photoData}
+                            alt={selectedPicture.name}
+                            className="w-full rounded-lg"
+                        />
+                        <div className="bg-white rounded-lg p-4 mt-4">
+                            <h3 className="font-bold text-slate-900 mb-2">{selectedPicture.name}</h3>
+                            <p className="text-sm text-slate-600 mb-3">@{selectedPicture.username}</p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="success"
+                                    className="flex-1"
+                                    onClick={() => handleApproveProfilePicture(selectedPicture.id, selectedPicture.userId)}
+                                    disabled={loading}
+                                >
+                                    <CheckCircle size={18} />
+                                    Approve Photo
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    className="flex-1"
+                                    onClick={() => openRejectModalProfilePicture(selectedPicture)}
+                                    disabled={loading}
+                                >
+                                    <X size={18} />
+                                    Reject & Delete
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Rejection Reason Modal */}
             {showRejectModal && requestToReject && (
                 <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4" onClick={() => setShowRejectModal(false)}>
                     <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-slate-900">Reject Verification</h3>
+                            <h3 className="text-lg font-bold text-slate-900">
+                                {requestToReject.photoData ? 'Reject Profile Picture' : 'Reject Verification'}
+                            </h3>
                             <button onClick={() => setShowRejectModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
                                 <X size={20} className="text-slate-500" />
                             </button>
                         </div>
                         
                         <p className="text-sm text-slate-600 mb-4">
-                            Please provide a reason for rejecting <strong>{requestToReject.tradieName}'s</strong> verification request.
-                            This will help them understand what needs to be corrected.
+                            Please provide a reason for rejecting <strong>{requestToReject.name || requestToReject.tradieName}'s</strong> {requestToReject.photoData ? 'profile picture' : 'verification request'}.
+                            {requestToReject.photoData && ' The photo will be automatically deleted.'}
                         </p>
                         
                         <div className="mb-4">
@@ -6906,7 +7141,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             <textarea
                                 value={rejectionReason}
                                 onChange={(e) => setRejectionReason(e.target.value)}
-                                placeholder="e.g., Document is blurry, card expired, name doesn't match profile..."
+                                placeholder={requestToReject.photoData 
+                                    ? "e.g., Inappropriate content, not a clear face photo, contains other people..."
+                                    : "e.g., Document is blurry, card expired, name doesn't match profile..."}
                                 rows={4}
                                 className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none text-sm"
                             />
@@ -6916,7 +7153,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             <div className="flex items-start gap-2">
                                 <Info size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-amber-800">
-                                    The rejection reason will be stored with the request. Consider implementing email notifications in the future to inform tradies automatically.
+                                    {requestToReject.photoData 
+                                        ? 'The user will receive a notification with your rejection reason. The photo will be deleted from their profile.'
+                                        : 'The rejection reason will be sent to the user as a notification.'}
                                 </p>
                             </div>
                         </div>
@@ -6936,10 +7175,10 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             <Button
                                 variant="danger"
                                 className="flex-1"
-                                onClick={confirmReject}
+                                onClick={requestToReject.photoData ? confirmRejectProfilePicture : confirmReject}
                                 disabled={loading || !rejectionReason.trim()}
                             >
-                                Confirm Rejection
+                                {requestToReject.photoData ? 'Reject & Delete' : 'Confirm Rejection'}
                             </Button>
                         </div>
                     </div>
