@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == 'ranson.samsung@gmail.com';
+    }
+    
+    match /verifications/{userId}/{fileName} {
+      allow create: if request.auth != null && request.auth.uid == userId
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+      allow read: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

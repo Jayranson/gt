@@ -22,9 +22,13 @@ Your Firebase config includes:
 ### Step 2: Deploy Storage Security Rules (3 minutes)
 
 1. Go to https://console.firebase.google.com/project/gaytradie-bdd1f/storage/rules
-2. Replace all existing rules with:
+2. You'll see a text editor with existing rules
+3. **DELETE ALL existing rules** and replace with the rules below
+4. **IMPORTANT**: Copy the rules from the `storage.rules` file in this repo, or copy the code below (starting from `rules_version`, NOT including the markdown fence)
 
-```javascript
+**Open `storage.rules` file and copy all content, OR copy this:**
+
+```
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
@@ -43,15 +47,21 @@ service firebase.storage {
 }
 ```
 
-3. Click **Publish**
+5. Paste into the Firebase Console rules editor
+6. Click **Publish**
+
+**Common Error**: If you get "Unexpected 'javascript'" error, you copied the markdown fence markers (``` or ```javascript). Only copy the actual rules code.
 
 ### Step 3: Update Firestore Security Rules (3 minutes)
 
 1. Go to https://console.firebase.google.com/project/gaytradie-bdd1f/firestore/rules
 2. Find the section with `match /artifacts/{appId}/public/data/{document=**}`
-3. Add this **inside** that match block (before the closing brace):
+3. Add the code below **inside** that match block (before the closing brace)
+4. **IMPORTANT**: Copy from the `firestore-verification-rules.txt` file in this repo, or copy the code below (NOT including the markdown fence)
 
-```javascript
+**Open `firestore-verification-rules.txt` file and copy all content, OR copy this:**
+
+```
 // Add this to your existing rules inside the artifacts match block
 match /verification_requests/{requestId} {
   allow create: if request.auth != null;
@@ -61,7 +71,8 @@ match /verification_requests/{requestId} {
 }
 ```
 
-4. Click **Publish**
+5. Paste into your existing Firestore rules (inside the artifacts match block)
+6. Click **Publish**
 
 ### Step 4: Create Firestore Index (2 minutes)
 

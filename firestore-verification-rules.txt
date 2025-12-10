@@ -1,0 +1,8 @@
+// Add this inside your existing match /artifacts/{appId}/public/data/{document=**} block
+
+match /verification_requests/{requestId} {
+  allow create: if request.auth != null;
+  allow read: if request.auth != null && request.auth.token.email == 'ranson.samsung@gmail.com';
+  allow update: if request.auth != null && request.auth.token.email == 'ranson.samsung@gmail.com';
+  allow delete: if request.auth != null && request.auth.token.email == 'ranson.samsung@gmail.com';
+}
