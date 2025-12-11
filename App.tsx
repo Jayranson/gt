@@ -7087,52 +7087,61 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                 </p>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <div className="space-y-4">
                                 {profilePictureRequests.map((request) => (
                                     <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                                        <div 
-                                            className="aspect-square bg-slate-100 cursor-pointer hover:opacity-90 transition-opacity"
-                                            onClick={() => setSelectedPicture(request)}
-                                        >
-                                            <img
-                                                src={request.photoData}
-                                                alt={request.name}
-                                                className="w-full h-full object-cover"
-                                            />
-                                        </div>
-                                        <div className="p-4">
-                                            <h3 className="font-bold text-slate-900 mb-1">{request.name}</h3>
-                                            <p className="text-xs text-slate-500 mb-3">
-                                                @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
-                                            </p>
-                                            <div className="flex gap-2">
-                                                <Button
-                                                    variant="success"
-                                                    className="flex-1 text-xs py-1.5"
-                                                    onClick={() => handleApproveProfilePicture(request.id, request.userId)}
-                                                    disabled={loading}
-                                                >
-                                                    <CheckCircle size={14} />
-                                                    Approve
-                                                </Button>
-                                                <Button
-                                                    variant="primary"
-                                                    className="flex-1 text-xs py-1.5"
-                                                    onClick={() => openCropModal(request)}
-                                                    disabled={loading}
-                                                >
-                                                    <Edit2 size={14} />
-                                                    Crop
-                                                </Button>
-                                                <Button
-                                                    variant="danger"
-                                                    className="flex-1 text-xs py-1.5"
-                                                    onClick={() => openRejectModalProfilePicture(request)}
-                                                    disabled={loading}
-                                                >
-                                                    <X size={14} />
-                                                    Reject
-                                                </Button>
+                                        <div className="flex flex-col md:flex-row gap-4 p-4">
+                                            {/* Profile Picture */}
+                                            <div 
+                                                className="w-full md:w-32 h-32 flex-shrink-0 bg-slate-100 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                                onClick={() => setSelectedPicture(request)}
+                                            >
+                                                <img
+                                                    src={request.photoData}
+                                                    alt={request.name}
+                                                    className="w-full h-full object-cover rounded-lg"
+                                                />
+                                            </div>
+                                            
+                                            {/* User Info and Actions */}
+                                            <div className="flex-1 flex flex-col justify-between">
+                                                <div>
+                                                    <h3 className="font-bold text-slate-900 text-lg mb-1">{request.name}</h3>
+                                                    <p className="text-sm text-slate-500 mb-4">
+                                                        @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                    </p>
+                                                </div>
+                                                
+                                                {/* Action Buttons */}
+                                                <div className="flex gap-3">
+                                                    <Button
+                                                        variant="success"
+                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        onClick={() => handleApproveProfilePicture(request.id, request.userId)}
+                                                        disabled={loading}
+                                                    >
+                                                        <CheckCircle size={16} />
+                                                        Approve
+                                                    </Button>
+                                                    <Button
+                                                        variant="primary"
+                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        onClick={() => openCropModal(request)}
+                                                        disabled={loading}
+                                                    >
+                                                        <Edit2 size={16} />
+                                                        Crop
+                                                    </Button>
+                                                    <Button
+                                                        variant="danger"
+                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        onClick={() => openRejectModalProfilePicture(request)}
+                                                        disabled={loading}
+                                                    >
+                                                        <X size={16} />
+                                                        Reject
+                                                    </Button>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
