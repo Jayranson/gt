@@ -305,7 +305,7 @@ const Badge = ({ type, text, icon: Icon }) => {
   );
 };
 
-const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIcon = false }) => {
+const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIcon = false, profilePictureRequests = [] }) => {
     const sizeClasses = {
         sm: 'w-8 h-8',
         md: 'w-12 h-12',
@@ -313,12 +313,28 @@ const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIc
         xl: 'w-32 h-32' 
     };
     
-    const blurClass = blur ? 'blur-md scale-110' : ''; 
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
+    
+    const blurClass = (blur || isPending) ? 'blur-md scale-110' : ''; 
     const hasPhoto = profile?.primaryPhoto || profile?.photo;
 
     const InnerContent = () => {
          if (hasPhoto) {
-            return <img src={profile.primaryPhoto || profile.photo} alt={profile.name} className={`w-full h-full object-cover ${blurClass}`} />;
+            return (
+                <>
+                    <img src={profile.primaryPhoto || profile.photo} alt={profile.name} className={`w-full h-full object-cover ${blurClass}`} />
+                    {isPending && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-lg">
+                                PENDING
+                            </div>
+                        </div>
+                    )}
+                </>
+            );
          }
          return (
              <div className={`w-full h-full flex items-center justify-center text-slate-400 bg-slate-200 ${blurClass} relative`}>
@@ -348,11 +364,16 @@ const VerifiedHardHat = () => (
     </div>
 );
 
-const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, shouldBlur = false, hideDistance = false }) => {
+const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, shouldBlur = false, hideDistance = false, profilePictureRequests = [] }) => {
     const isTradie = profile.role === 'tradie';
     const isVerified = profile.verified;
     const placeholderColor = isTradie ? 'bg-slate-800' : 'bg-slate-400';
     const photoUrl = profile.primaryPhoto || profile.photo || `https://placehold.co/400x400/${placeholderColor.replace('bg-', '')}/ffffff?text=${(profile.name || profile.username || 'U').charAt(0)}`;
+
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
 
     // Better distance display logic with privacy
     let distanceDisplay = 'Dist?';
@@ -376,8 +397,8 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
         }
     }
 
-    // Only blur if not viewing own profile
-    const shouldApplyBlur = shouldBlur && !isCurrentUser;
+    // Only blur if not viewing own profile or if pending
+    const shouldApplyBlur = (shouldBlur && !isCurrentUser) || isPending;
 
     return (
         <button
@@ -391,8 +412,17 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
                 onError={(e) => { e.target.onerror = null; e.target.src = photoUrl; }}
             />
             
+            {/* Pending Review Indicator */}
+            {isPending && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-orange-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
+                        PENDING REVIEW
+                    </div>
+                </div>
+            )}
+            
             {/* Blur Indicator */}
-            {shouldApplyBlur && (
+            {shouldApplyBlur && !isPending && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="bg-black/50 p-2 rounded-full text-white backdrop-blur-sm" title="Match to unblur">
                         <Lock size={20} />
@@ -432,11 +462,16 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
     );
 };
 
-const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hideDistance = false }) => {
+const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hideDistance = false, profilePictureRequests = [] }) => {
     const isTradie = profile.role === 'tradie';
     const photoUrl = profile.primaryPhoto || profile.photo || `https://placehold.co/600x450/333333/ffffff?text=${(profile.name || 'User').charAt(0)}`;
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const [reviews, setReviews] = useState([]);
+
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
 
     // Fetch reviews for tradies
     useEffect(() => {
@@ -493,8 +528,8 @@ const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hide
         locationDisplay = `${distanceKm.toFixed(1)} km away`;
     }
 
-    // Only blur photos if not viewing own profile
-    const shouldBlurPhoto = profile.blurPhotos && auth?.currentUser?.uid !== profile.uid;
+    // Only blur photos if not viewing own profile or if pending
+    const shouldBlurPhoto = (profile.blurPhotos && auth?.currentUser?.uid !== profile.uid) || isPending;
 
     return (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-end sm:items-center justify-center animate-in fade-in duration-200">
@@ -521,7 +556,14 @@ const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hide
                         alt="Profile"
                         className={`w-full h-full object-cover ${shouldBlurPhoto ? 'blur-md scale-110' : ''}`}
                     />
-                    {shouldBlurPhoto && (
+                    {isPending && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
+                                PENDING REVIEW
+                            </div>
+                        </div>
+                    )}
+                    {shouldBlurPhoto && !isPending && (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div className="bg-black/50 p-3 rounded-full text-white backdrop-blur-sm">
                                 <Lock size={32} />
@@ -6371,6 +6413,8 @@ const AdminPanel = ({ user, onBack, showToast }) => {
     const [showRejectModal, setShowRejectModal] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [requestToReject, setRequestToReject] = useState(null);
+    const [showCropModal, setShowCropModal] = useState(false);
+    const [cropData, setCropData] = useState({ x: 0, y: 0, width: 100, height: 100 });
 
     // Check if user is admin
     const isAdmin = user?.email === ADMIN_EMAIL;
@@ -6647,6 +6691,109 @@ const AdminPanel = ({ user, onBack, showToast }) => {
             return;
         }
         handleRejectProfilePicture(requestToReject.id, requestToReject.userId, rejectionReason);
+    };
+
+    // Open crop modal for profile picture
+    const openCropModal = (picture) => {
+        setSelectedPicture(picture);
+        setShowCropModal(true);
+        // Reset crop data to center
+        setCropData({ x: 10, y: 10, width: 80, height: 80 });
+    };
+
+    // Save cropped image
+    const handleSaveCrop = async () => {
+        if (!selectedPicture) return;
+        
+        setLoading(true);
+        try {
+            // Create canvas to crop the image
+            const img = new Image();
+            img.src = selectedPicture.photoData;
+            
+            await new Promise((resolve) => {
+                img.onload = resolve;
+            });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Calculate actual pixel values from percentages
+            const cropX = (cropData.x / 100) * img.width;
+            const cropY = (cropData.y / 100) * img.height;
+            const cropWidth = (cropData.width / 100) * img.width;
+            const cropHeight = (cropData.height / 100) * img.height;
+            
+            canvas.width = cropWidth;
+            canvas.height = cropHeight;
+            
+            // Draw cropped portion
+            ctx.drawImage(
+                img,
+                cropX, cropY, cropWidth, cropHeight,
+                0, 0, cropWidth, cropHeight
+            );
+            
+            // Convert to base64 and compress to 30KB
+            let croppedImage = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Use the same compression function
+            const compressImage = (base64Image, targetSizeBytes) => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        const BASE64_SIZE_RATIO = 0.75;
+                        const currentSize = base64Image.length * BASE64_SIZE_RATIO;
+                        
+                        if (currentSize > targetSizeBytes) {
+                            const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.85;
+                            width = Math.max(100, Math.floor(width * scaleFactor));
+                            height = Math.max(100, Math.floor(height * scaleFactor));
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        let quality = 0.8;
+                        let result = canvas.toDataURL('image/jpeg', quality);
+                        
+                        while (result.length * BASE64_SIZE_RATIO > targetSizeBytes && quality > 0.1) {
+                            quality -= 0.05;
+                            result = canvas.toDataURL('image/jpeg', quality);
+                        }
+                        
+                        resolve(result);
+                    };
+                    img.src = base64Image;
+                });
+            };
+            
+            croppedImage = await compressImage(croppedImage, 30 * 1024);
+            
+            // Save cropped image to user's profile
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', selectedPicture.userId), {
+                primaryPhoto: croppedImage
+            });
+            
+            // Approve the request
+            await handleApproveProfilePicture(selectedPicture.id, selectedPicture.userId);
+            
+            setShowCropModal(false);
+            setSelectedPicture(null);
+            showToast("Image cropped and approved!", "success");
+        } catch (error) {
+            console.error("Error cropping image:", error);
+            showToast("Failed to crop image", "error");
+        } finally {
+            setLoading(false);
+        }
     };
 
     // Handle seed data (for testing)
@@ -6944,20 +7091,29 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                             <div className="flex gap-2">
                                                 <Button
                                                     variant="success"
-                                                    className="flex-1 text-sm"
+                                                    className="flex-1 text-xs py-1.5"
                                                     onClick={() => handleApproveProfilePicture(request.id, request.userId)}
                                                     disabled={loading}
                                                 >
-                                                    <CheckCircle size={16} />
+                                                    <CheckCircle size={14} />
                                                     Approve
                                                 </Button>
                                                 <Button
+                                                    variant="primary"
+                                                    className="flex-1 text-xs py-1.5"
+                                                    onClick={() => openCropModal(request)}
+                                                    disabled={loading}
+                                                >
+                                                    <Edit2 size={14} />
+                                                    Crop
+                                                </Button>
+                                                <Button
                                                     variant="danger"
-                                                    className="flex-1 text-sm"
+                                                    className="flex-1 text-xs py-1.5"
                                                     onClick={() => openRejectModalProfilePicture(request)}
                                                     disabled={loading}
                                                 >
-                                                    <X size={16} />
+                                                    <X size={14} />
                                                     Reject
                                                 </Button>
                                             </div>
@@ -7095,13 +7251,25 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             <p className="text-sm text-slate-600 mb-3">@{selectedPicture.username}</p>
                             <div className="flex gap-2">
                                 <Button
-                                    variant="success"
+                                                    variant="success"
                                     className="flex-1"
                                     onClick={() => handleApproveProfilePicture(selectedPicture.id, selectedPicture.userId)}
                                     disabled={loading}
                                 >
                                     <CheckCircle size={18} />
-                                    Approve Photo
+                                    Approve
+                                </Button>
+                                <Button
+                                    variant="primary"
+                                    className="flex-1"
+                                    onClick={() => {
+                                        setShowCropModal(true);
+                                        setCropData({ x: 10, y: 10, width: 80, height: 80 });
+                                    }}
+                                    disabled={loading}
+                                >
+                                    <Edit2 size={18} />
+                                    Crop
                                 </Button>
                                 <Button
                                     variant="danger"
@@ -7110,7 +7278,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                     disabled={loading}
                                 >
                                     <X size={18} />
-                                    Reject & Delete
+                                    Reject
                                 </Button>
                             </div>
                         </div>
@@ -7179,6 +7347,126 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                 disabled={loading || !rejectionReason.trim()}
                             >
                                 {requestToReject.photoData ? 'Reject & Delete' : 'Confirm Rejection'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Crop Modal */}
+            {showCropModal && selectedPicture && (
+                <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4" onClick={() => setShowCropModal(false)}>
+                    <div className="bg-white rounded-2xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-slate-900">Crop Profile Picture</h3>
+                            <button onClick={() => setShowCropModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        <p className="text-sm text-slate-600 mb-4">
+                            Adjust the crop area to frame the image properly. The cropped image will be automatically approved.
+                        </p>
+                        
+                        {/* Image Preview with Crop Overlay */}
+                        <div className="relative bg-slate-100 rounded-lg overflow-hidden mb-4" style={{ aspectRatio: '1/1' }}>
+                            <img
+                                src={selectedPicture.photoData}
+                                alt="Crop preview"
+                                className="w-full h-full object-contain"
+                            />
+                            <div 
+                                className="absolute border-4 border-orange-500 bg-orange-500/20"
+                                style={{
+                                    left: `${cropData.x}%`,
+                                    top: `${cropData.y}%`,
+                                    width: `${cropData.width}%`,
+                                    height: `${cropData.height}%`,
+                                    cursor: 'move'
+                                }}
+                            >
+                                {/* Corner Handles */}
+                                <div className="absolute -top-2 -left-2 w-4 h-4 bg-orange-500 rounded-full cursor-nw-resize"></div>
+                                <div className="absolute -top-2 -right-2 w-4 h-4 bg-orange-500 rounded-full cursor-ne-resize"></div>
+                                <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-orange-500 rounded-full cursor-sw-resize"></div>
+                                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-orange-500 rounded-full cursor-se-resize"></div>
+                            </div>
+                        </div>
+                        
+                        {/* Crop Controls */}
+                        <div className="space-y-3 mb-4">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Horizontal Position</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={100 - cropData.width}
+                                    value={cropData.x}
+                                    onChange={(e) => setCropData(prev => ({ ...prev, x: parseInt(e.target.value) }))}
+                                    className="w-full"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Vertical Position</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={100 - cropData.height}
+                                    value={cropData.y}
+                                    onChange={(e) => setCropData(prev => ({ ...prev, y: parseInt(e.target.value) }))}
+                                    className="w-full"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Crop Size (Width & Height)</label>
+                                <input
+                                    type="range"
+                                    min="20"
+                                    max="100"
+                                    value={cropData.width}
+                                    onChange={(e) => {
+                                        const size = parseInt(e.target.value);
+                                        setCropData(prev => ({ 
+                                            ...prev, 
+                                            width: size, 
+                                            height: size,
+                                            x: Math.min(prev.x, 100 - size),
+                                            y: Math.min(prev.y, 100 - size)
+                                        }));
+                                    }}
+                                    className="w-full"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                            <div className="flex items-start gap-2">
+                                <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-800">
+                                    The cropped image will be saved to the user's profile and automatically approved.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="flex-1"
+                                onClick={() => {
+                                    setShowCropModal(false);
+                                    setCropData({ x: 10, y: 10, width: 80, height: 80 });
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="success"
+                                className="flex-1"
+                                onClick={handleSaveCrop}
+                                disabled={loading}
+                            >
+                                <CheckCircle size={18} />
+                                Save & Approve
                             </Button>
                         </div>
                     </div>
