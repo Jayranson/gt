@@ -7106,32 +7106,32 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                                 </div>
                                                 
                                                 {/* Action Buttons */}
-                                                <div className="flex flex-col gap-2">
+                                                <div className="flex flex-row gap-2">
                                                     <Button
                                                         variant="success"
-                                                        className="flex items-center justify-center gap-2 w-full py-2"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
                                                         onClick={() => handleApproveProfilePicture(request.id, request.userId)}
                                                         disabled={loading}
                                                     >
-                                                        <CheckCircle size={16} />
+                                                        <CheckCircle size={14} />
                                                         Approve
                                                     </Button>
                                                     <Button
                                                         variant="primary"
-                                                        className="flex items-center justify-center gap-2 w-full py-2"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
                                                         onClick={() => openCropModal(request)}
                                                         disabled={loading}
                                                     >
-                                                        <Edit2 size={16} />
+                                                        <Edit2 size={14} />
                                                         Crop
                                                     </Button>
                                                     <Button
                                                         variant="danger"
-                                                        className="flex items-center justify-center gap-2 w-full py-2"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
                                                         onClick={() => openRejectModalProfilePicture(request)}
                                                         disabled={loading}
                                                     >
-                                                        <X size={16} />
+                                                        <X size={14} />
                                                         Reject
                                                     </Button>
                                                 </div>
@@ -7383,27 +7383,27 @@ const AdminPanel = ({ user, onBack, showToast }) => {
             {/* Crop Modal */}
             {showCropModal && selectedPicture && (
                 <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4" onClick={() => setShowCropModal(false)}>
-                    <div className="bg-white rounded-2xl max-w-2xl w-full p-6" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-bold text-slate-900">Crop Profile Picture</h3>
-                            <button onClick={() => setShowCropModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
-                                <X size={20} className="text-slate-500" />
+                    <div className="bg-white rounded-2xl max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-base font-bold text-slate-900">Crop Profile Picture</h3>
+                            <button onClick={() => setShowCropModal(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={18} className="text-slate-500" />
                             </button>
                         </div>
                         
-                        <p className="text-sm text-slate-600 mb-4">
+                        <p className="text-xs text-slate-600 mb-3">
                             Adjust the crop area to frame the image properly. The cropped image will be automatically approved.
                         </p>
                         
                         {/* Image Preview with Crop Overlay */}
-                        <div className="relative bg-slate-100 rounded-lg overflow-hidden mb-4" style={{ aspectRatio: '1/1' }}>
+                        <div className="relative bg-slate-100 rounded-lg overflow-hidden mb-3" style={{ height: '300px' }}>
                             <img
                                 src={selectedPicture.photoData}
                                 alt="Crop preview"
                                 className="w-full h-full object-contain"
                             />
                             <div 
-                                className="absolute border-4 border-orange-500 bg-orange-500/20"
+                                className="absolute border-2 border-orange-500 bg-orange-500/20"
                                 style={{
                                     left: `${cropData.x}%`,
                                     top: `${cropData.y}%`,
@@ -7411,17 +7411,11 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                     height: `${cropData.height}%`,
                                     cursor: 'move'
                                 }}
-                            >
-                                {/* Corner Handles */}
-                                <div className="absolute -top-2 -left-2 w-4 h-4 bg-orange-500 rounded-full cursor-nw-resize"></div>
-                                <div className="absolute -top-2 -right-2 w-4 h-4 bg-orange-500 rounded-full cursor-ne-resize"></div>
-                                <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-orange-500 rounded-full cursor-sw-resize"></div>
-                                <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-orange-500 rounded-full cursor-se-resize"></div>
-                            </div>
+                            ></div>
                         </div>
                         
                         {/* Crop Controls */}
-                        <div className="space-y-3 mb-4">
+                        <div className="space-y-2 mb-3">
                             <div>
                                 <label className="block text-xs font-medium text-slate-700 mb-1">Horizontal Position</label>
                                 <input
@@ -7466,9 +7460,9 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                             </div>
                         </div>
                         
-                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
                             <div className="flex items-start gap-2">
-                                <Info size={16} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                <Info size={14} className="text-blue-600 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs text-blue-800">
                                     The cropped image will be saved to the user's profile and automatically approved.
                                 </p>
@@ -7478,7 +7472,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                         <div className="flex gap-2">
                             <Button
                                 variant="ghost"
-                                className="flex-1"
+                                className="flex-1 py-2"
                                 onClick={() => {
                                     setShowCropModal(false);
                                     setCropData({ x: 10, y: 10, width: 80, height: 80 });
