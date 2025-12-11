@@ -45,11 +45,21 @@ import {
   arrayUnion,
   writeBatch
 } from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref as storageRef, 
+  uploadBytes, 
+  getDownloadURL,
+  deleteObject
+} from 'firebase/storage';
 
 // --- CONFIG & INIT ---
 // Note: Firebase initialization is deferred to ensure window.__firebase_config is set
-let app, auth, db;
+let app, auth, db, storage;
 let isFirebaseConfigured = false;
+
+// Admin email - only this user can access admin panel
+const ADMIN_EMAIL = 'ranson.samsung@gmail.com';
 
 // Function to initialize Firebase (called after window variables are guaranteed to be set)
 const initializeFirebase = () => {
@@ -63,6 +73,7 @@ const initializeFirebase = () => {
             app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
+            storage = getStorage(app);
             isFirebaseConfigured = true;
             console.log("Firebase initialized successfully");
         }
@@ -267,11 +278,11 @@ const Button = ({ children, onClick, variant = 'primary', className = '', disabl
 
 const Input = ({ label, textarea, ...props }) => (
   <div className="mb-4">
-    {label && <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>}
+    {label && <label className="block text-sm font-medium text-slate-300 mb-1">{label}</label>}
     {textarea ? (
-      <textarea className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" {...props} />
+      <textarea className="w-full p-3 border border-slate-600 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400" {...props} />
     ) : (
-      <input className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" {...props} />
+      <input className="w-full p-3 border border-slate-600 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400" {...props} />
     )}
   </div>
 );
@@ -294,7 +305,7 @@ const Badge = ({ type, text, icon: Icon }) => {
   );
 };
 
-const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIcon = false }) => {
+const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIcon = false, profilePictureRequests = [] }) => {
     const sizeClasses = {
         sm: 'w-8 h-8',
         md: 'w-12 h-12',
@@ -302,12 +313,28 @@ const Avatar = ({ profile, size = 'md', className = '', blur = false, showEditIc
         xl: 'w-32 h-32' 
     };
     
-    const blurClass = blur ? 'blur-md scale-110' : ''; 
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
+    
+    const blurClass = (blur || isPending) ? 'blur-md scale-110' : ''; 
     const hasPhoto = profile?.primaryPhoto || profile?.photo;
 
     const InnerContent = () => {
          if (hasPhoto) {
-            return <img src={profile.primaryPhoto || profile.photo} alt={profile.name} className={`w-full h-full object-cover ${blurClass}`} />;
+            return (
+                <>
+                    <img src={profile.primaryPhoto || profile.photo} alt={profile.name} className={`w-full h-full object-cover ${blurClass}`} />
+                    {isPending && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-orange-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow-lg">
+                                PENDING
+                            </div>
+                        </div>
+                    )}
+                </>
+            );
          }
          return (
              <div className={`w-full h-full flex items-center justify-center text-slate-400 bg-slate-200 ${blurClass} relative`}>
@@ -337,11 +364,16 @@ const VerifiedHardHat = () => (
     </div>
 );
 
-const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, shouldBlur = false, hideDistance = false }) => {
+const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, shouldBlur = false, hideDistance = false, profilePictureRequests = [] }) => {
     const isTradie = profile.role === 'tradie';
     const isVerified = profile.verified;
     const placeholderColor = isTradie ? 'bg-slate-800' : 'bg-slate-400';
     const photoUrl = profile.primaryPhoto || profile.photo || `https://placehold.co/400x400/${placeholderColor.replace('bg-', '')}/ffffff?text=${(profile.name || profile.username || 'U').charAt(0)}`;
+
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
 
     // Better distance display logic with privacy
     let distanceDisplay = 'Dist?';
@@ -365,8 +397,8 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
         }
     }
 
-    // Only blur if not viewing own profile
-    const shouldApplyBlur = shouldBlur && !isCurrentUser;
+    // Only blur if not viewing own profile or if pending
+    const shouldApplyBlur = (shouldBlur && !isCurrentUser) || isPending;
 
     return (
         <button
@@ -380,8 +412,17 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
                 onError={(e) => { e.target.onerror = null; e.target.src = photoUrl; }}
             />
             
+            {/* Pending Review Indicator */}
+            {isPending && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="bg-orange-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg">
+                        PENDING REVIEW
+                    </div>
+                </div>
+            )}
+            
             {/* Blur Indicator */}
-            {shouldApplyBlur && (
+            {shouldApplyBlur && !isPending && (
                 <div className="absolute inset-0 flex items-center justify-center">
                     <div className="bg-black/50 p-2 rounded-full text-white backdrop-blur-sm" title="Match to unblur">
                         <Lock size={20} />
@@ -421,11 +462,16 @@ const ProfileTile = ({ profile, distanceKm, onOpenProfile, isCurrentUser, should
     );
 };
 
-const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hideDistance = false }) => {
+const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hideDistance = false, profilePictureRequests = [] }) => {
     const isTradie = profile.role === 'tradie';
     const photoUrl = profile.primaryPhoto || profile.photo || `https://placehold.co/600x450/333333/ffffff?text=${(profile.name || 'User').charAt(0)}`;
     const [showBlockConfirm, setShowBlockConfirm] = useState(false);
     const [reviews, setReviews] = useState([]);
+
+    // Check if this user's profile picture is pending review
+    const isPending = profilePictureRequests && profilePictureRequests.some(req => 
+        req.userId === profile?.uid && req.status === 'pending'
+    );
 
     // Fetch reviews for tradies
     useEffect(() => {
@@ -482,8 +528,8 @@ const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hide
         locationDisplay = `${distanceKm.toFixed(1)} km away`;
     }
 
-    // Only blur photos if not viewing own profile
-    const shouldBlurPhoto = profile.blurPhotos && auth?.currentUser?.uid !== profile.uid;
+    // Only blur photos if not viewing own profile or if pending
+    const shouldBlurPhoto = (profile.blurPhotos && auth?.currentUser?.uid !== profile.uid) || isPending;
 
     return (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-end sm:items-center justify-center animate-in fade-in duration-200">
@@ -510,7 +556,14 @@ const ProfileModal = ({ profile, distanceKm, onClose, onConnect, onMessage, hide
                         alt="Profile"
                         className={`w-full h-full object-cover ${shouldBlurPhoto ? 'blur-md scale-110' : ''}`}
                     />
-                    {shouldBlurPhoto && (
+                    {isPending && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="bg-orange-500 text-white text-sm font-bold px-4 py-2 rounded-full shadow-lg">
+                                PENDING REVIEW
+                            </div>
+                        </div>
+                    )}
+                    {shouldBlurPhoto && !isPending && (
                         <div className="absolute inset-0 flex items-center justify-center">
                             <div className="bg-black/50 p-3 rounded-full text-white backdrop-blur-sm">
                                 <Lock size={32} />
@@ -701,6 +754,7 @@ export default function App() {
   const [acceptedTradieIds, setAcceptedTradieIds] = useState(new Set()); 
   const [chatBackView, setChatBackView] = useState('feed'); // Track where to go back from chat (default to feed)
   const [pendingJobsCount, setPendingJobsCount] = useState(0); // Count of pending job actions
+  const [profilePictureRequests, setProfilePictureRequests] = useState([]); // Profile picture verification requests
   
   // Notification dots state (true = show red dot, false = hidden)
   const [hasJobsNotification, setHasJobsNotification] = useState(false);
@@ -885,6 +939,20 @@ export default function App() {
     return () => unsub();
   }, [user]);
 
+  // Fetch Profile Picture Verification Requests (for blur detection)
+  useEffect(() => {
+    if (!db) return;
+    const q = query(collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const requests = [];
+      snapshot.forEach(doc => {
+        requests.push({ id: doc.id, ...doc.data() });
+      });
+      setProfilePictureRequests(requests);
+    });
+    return () => unsub();
+  }, []);
+
   // Set Profile notification if email not verified
   useEffect(() => {
     if (user && !user.emailVerified) {
@@ -931,7 +999,7 @@ export default function App() {
     switch (view) {
       case 'landing': return <LandingPage onLogin={() => setView('onboarding')} />;
       case 'onboarding': return <Onboarding user={user} onComplete={() => setView('feed')} />;
-      case 'feed': return <Feed user={user} userProfile={userProfile} activeTab={activeTab} setActiveTab={setActiveTab} filter={feedFilter} clearFilter={() => setFeedFilter(null)} onMessage={(p) => { setSelectedProfile(p); setChatBackView('feed'); setView('chat'); }} onRequestJob={(p) => { setSelectedProfile(p); setView('requestJob'); }} acceptedTradieIds={acceptedTradieIds} onEnableLocation={updateLocation} showToast={showToast} />;
+      case 'feed': return <Feed user={user} userProfile={userProfile} activeTab={activeTab} setActiveTab={setActiveTab} filter={feedFilter} clearFilter={() => setFeedFilter(null)} onMessage={(p) => { setSelectedProfile(p); setChatBackView('feed'); setView('chat'); }} onRequestJob={(p) => { setSelectedProfile(p); setView('requestJob'); }} acceptedTradieIds={acceptedTradieIds} onEnableLocation={updateLocation} showToast={showToast} profilePictureRequests={profilePictureRequests} />;
       case 'services': return <ServiceFinder onSelectService={(trade) => { setFeedFilter(trade); setView('feed'); }} onPostJob={() => setView('postJobAdvert')} />;
       case 'postJobAdvert': return <PostJobAdvert user={user} onCancel={() => setView('services')} onSuccess={() => { setView('jobs'); showToast("Advert Posted!", "success"); }} />;
       case 'messages': return <ChatList user={user} onSelectChat={(p) => { setSelectedProfile(p); setChatBackView('messages'); setView('chat'); }} />;
@@ -949,7 +1017,7 @@ export default function App() {
           console.error("Sign out error:", error);
           showToast("Failed to sign out", "error");
         }
-      }} showToast={showToast} onEnableLocation={updateLocation} onNavigate={setView} />;
+      }} showToast={showToast} onEnableLocation={updateLocation} onNavigate={setView} profilePictureRequests={profilePictureRequests} />;
       case 'settings': return <SettingsScreen user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
       case 'workCalendar': return <WorkCalendar user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
       case 'paymentsCredits': return <PaymentsCredits user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
@@ -972,9 +1040,12 @@ export default function App() {
             <h1 className="font-bold text-xl tracking-tight">Gay<span className="text-orange-500">Tradies</span></h1>
           </div>
           <div className="flex gap-3">
-             <button onClick={() => setView('admin')} className="p-1 hover:bg-slate-700 rounded text-slate-400">
-               <ShieldCheck size={18} />
-             </button>
+             {/* Admin shield only visible to admin user */}
+             {user?.email === ADMIN_EMAIL && (
+               <button onClick={() => setView('admin')} className="p-1 hover:bg-slate-700 rounded text-slate-400">
+                 <ShieldCheck size={18} />
+               </button>
+             )}
              <button className="relative p-1 hover:bg-slate-700 rounded transition-colors" onClick={() => setView('messages')}>
                <MessageCircle size={24} />
              </button>
@@ -1227,7 +1298,7 @@ const LandingPage = ({ onLogin }) => {
 
   return (
     <div className="h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, #f97316 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, #f97316 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
       
       <div className="z-10 w-full max-w-md">
         {/* Logo */}
@@ -1496,7 +1567,7 @@ const Onboarding = ({ user, onComplete }) => {
   );
 };
 
-const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequestJob, filter, clearFilter, acceptedTradieIds, onEnableLocation, showToast }) => {
+const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequestJob, filter, clearFilter, acceptedTradieIds, onEnableLocation, showToast, profilePictureRequests = [] }) => {
   const [profiles, setProfiles] = useState([]);
   const [blockedUserIds, setBlockedUserIds] = useState(new Set());
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
@@ -1776,6 +1847,7 @@ const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequest
                             isCurrentUser={profile.uid === user.uid}
                             shouldBlur={profile.blurPhotos && profile.uid !== user.uid}
                             hideDistance={profile.hideDistance}
+                            profilePictureRequests={profilePictureRequests}
                         />
                     ))
                 ) : (
@@ -1798,6 +1870,7 @@ const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequest
                     onConnect={handleConnect}
                     onMessage={(p) => { setSelectedSocialProfile(null); onMessage(p); }}
                     hideDistance={selectedSocialProfile.hideDistance}
+                    profilePictureRequests={profilePictureRequests}
                 />
             )}
         </div>
@@ -3864,7 +3937,7 @@ const ChatRoom = ({ user, partner, onBack }) => {
 };
 
 // UPDATED: UserProfile now accepts onEnableLocation to fix the button in view
-const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onNavigate }) => {
+const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onNavigate, profilePictureRequests = [] }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState({});
     const [isVerifying, setIsVerifying] = useState(false); // Modal state for verification
@@ -3882,26 +3955,66 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
         showToast("Profile Updated!", "success");
     };
 
-    // UPDATED: Logic to handle Verification Request with actual file upload
+    // UPDATED: Logic to handle Verification Request with Firebase Storage upload
     const handleVerifySubmit = async () => {
         if (!verificationDocs.front || !verificationDocs.back) {
             showToast("Please upload both front and back of ID", "error");
             return;
         }
         
-        // In production, these would be uploaded to Firebase Storage or S3
-        // For now, we store them as base64 in the profile document
-        await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
-            verificationStatus: 'pending_review',
-            verificationDocuments: {
-                front: verificationDocs.front,
-                back: verificationDocs.back,
-                submittedAt: serverTimestamp()
-            }
-        });
-        setIsVerifying(false);
-        setVerificationDocs({ front: null, back: null });
-        showToast("Documents sent for review!", "success");
+        if (!storage) {
+            showToast("Storage not initialized", "error");
+            return;
+        }
+        
+        try {
+            showToast("Uploading documents securely...", "info");
+            
+            // Convert base64 to blob for upload
+            const frontBlob = await fetch(verificationDocs.front).then(r => r.blob());
+            const backBlob = await fetch(verificationDocs.back).then(r => r.blob());
+            
+            // Create unique file names with timestamp
+            const timestamp = Date.now();
+            const frontFileName = `verifications/${user.uid}/cscs_front_${timestamp}.jpg`;
+            const backFileName = `verifications/${user.uid}/cscs_back_${timestamp}.jpg`;
+            
+            // Upload to Firebase Storage
+            const frontRef = storageRef(storage, frontFileName);
+            const backRef = storageRef(storage, backFileName);
+            
+            await uploadBytes(frontRef, frontBlob);
+            await uploadBytes(backRef, backBlob);
+            
+            // Get download URLs
+            const frontUrl = await getDownloadURL(frontRef);
+            const backUrl = await getDownloadURL(backRef);
+            
+            // Create verification request in Firestore
+            await addDoc(collection(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests'), {
+                tradieUid: user.uid,
+                tradieName: profile.name || profile.username,
+                trade: profile.trade || 'Not specified',
+                cardImageUrl: frontUrl, // Primary image for preview
+                cardImageBackUrl: backUrl,
+                status: 'pending',
+                createdAt: serverTimestamp(),
+                notes: `Trade: ${profile.trade || 'Not specified'}`
+            });
+            
+            // Update profile to indicate verification is pending
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                verificationStatus: 'pending',
+                verificationRequestedAt: serverTimestamp()
+            });
+            
+            setIsVerifying(false);
+            setVerificationDocs({ front: null, back: null });
+            showToast("Verification request submitted!", "success");
+        } catch (error) {
+            console.error("Error submitting verification:", error);
+            showToast("Failed to submit verification request", "error");
+        }
     };
 
     const handleVerificationUpload = (e, side) => {
@@ -3934,18 +4047,32 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
             try {
                 let imageData = event.target.result;
                 
-                // Always compress to 10KB target size
-                imageData = await compressImage(imageData, 10 * 1024); // 10KB
+                // Compress to 30KB target size for better quality
+                imageData = await compressImage(imageData, 30 * 1024); // 30KB
                 
                 // Update local state first
                 setEditData(prev => ({...prev, [field]: imageData}));
                 
-                // Then save to Firebase and wait for completion
+                // Save to Firebase
                 await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
                     [field]: imageData
                 });
                 
-                showToast("Image uploaded successfully!", "success");
+                // If uploading primary photo, create verification request
+                if (field === 'primaryPhoto') {
+                    await addDoc(collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'), {
+                        userId: user.uid,
+                        username: profile.username || profile.name || 'Unknown',
+                        name: profile.name || profile.username || 'Unknown',
+                        photoData: imageData,
+                        status: 'pending',
+                        createdAt: new Date(),
+                        uploadedAt: new Date()
+                    });
+                    showToast("Profile picture uploaded! Pending admin review.", "info");
+                } else {
+                    showToast("Image uploaded successfully!", "success");
+                }
             } catch (error) {
                 console.error("Error uploading image:", error);
                 showToast("Failed to upload image", "error");
@@ -3966,12 +4093,12 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 // Estimate current size and calculate aggressive scaling if needed
                 const currentSize = base64Image.length * BASE64_SIZE_RATIO;
                 
-                // Start with aggressive downscaling for 10KB target
+                // Start with aggressive downscaling for small targets
                 if (currentSize > targetSizeBytes) {
-                    // Use more aggressive scaling factor for small targets like 10KB
-                    const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.8;
-                    width = Math.max(50, Math.floor(width * scaleFactor)); // Minimum 50px
-                    height = Math.max(50, Math.floor(height * scaleFactor));
+                    // Adjusted scaling for 30KB target - allows better quality
+                    const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.85;
+                    width = Math.max(100, Math.floor(width * scaleFactor)); // Minimum 100px for profile pics
+                    height = Math.max(100, Math.floor(height * scaleFactor));
                 }
                 
                 canvas.width = width;
@@ -3981,7 +4108,7 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 ctx.drawImage(img, 0, 0, width, height);
                 
                 // Compress with quality adjustment to hit target size
-                let quality = 0.7; // Start with lower quality for 10KB target
+                let quality = 0.8; // Start with higher quality for 30KB target
                 let compressedData = canvas.toDataURL('image/jpeg', quality);
                 
                 // Reduce quality until we're under target size
@@ -4079,7 +4206,7 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 </div>
 
                 <div className={`relative mb-3 group -mt-16`}>
-                    <Avatar profile={isEditing ? editData : profile} size="xl" className="shadow-lg border-4 border-white w-24 h-24" showEditIcon={!isEditing} />
+                    <Avatar profile={isEditing ? editData : profile} size="xl" className="shadow-lg border-4 border-white w-24 h-24" showEditIcon={!isEditing} profilePictureRequests={profilePictureRequests} />
                     
                     {/* Busy/DND Badge */}
                     {profile.role === 'tradie' && !isEditing && (() => {
@@ -4177,6 +4304,130 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                         )}
                     </div>
                 )}
+                
+                {/* Verification Approval Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'verification_approved' && !n.read) && (
+                    <div className="mt-4 w-full bg-green-50 border-2 border-green-500 p-4 rounded-xl animate-in fade-in">
+                        <div className="flex items-start gap-3">
+                            <div className="bg-green-500 text-white p-2 rounded-full flex-shrink-0">
+                                <CheckCircle size={20} />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="font-bold text-green-900 text-sm">Verification Approved!</h4>
+                                <p className="text-xs text-green-800 mt-1">
+                                    Your tradie verification has been approved. You now have a verified badge on your profile.
+                                </p>
+                                <button
+                                    onClick={async () => {
+                                        // Mark notification as read
+                                        const updatedNotifications = profile.notifications.map(n =>
+                                            n.type === 'verification_approved' ? { ...n, read: true } : n
+                                        );
+                                        await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                            notifications: updatedNotifications
+                                        });
+                                    }}
+                                    className="mt-2 text-xs font-bold text-green-700 hover:text-green-900 underline"
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Verification Rejection Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'verification_rejected' && !n.read) && (() => {
+                    const rejectionNotif = profile.notifications.find(n => n.type === 'verification_rejected' && !n.read);
+                    return (
+                        <div className="mt-4 w-full bg-red-50 border-2 border-red-500 p-4 rounded-xl animate-in fade-in">
+                            <div className="flex items-start gap-3">
+                                <div className="bg-red-500 text-white p-2 rounded-full flex-shrink-0">
+                                    <X size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-red-900 text-sm">Verification Rejected</h4>
+                                    <p className="text-xs text-red-800 mt-1 font-medium">
+                                        Reason: {rejectionNotif.message}
+                                    </p>
+                                    <p className="text-xs text-red-700 mt-2">
+                                        Please review the feedback and submit again with corrected documents.
+                                    </p>
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={() => setIsVerifying(true)}
+                                            className="text-xs font-bold bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 transition-colors"
+                                        >
+                                            Resubmit Documents
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                // Mark notification as read
+                                                const updatedNotifications = profile.notifications.map(n =>
+                                                    n.type === 'verification_rejected' ? { ...n, read: true } : n
+                                                );
+                                                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                                    notifications: updatedNotifications
+                                                });
+                                            }}
+                                            className="text-xs font-bold text-red-700 hover:text-red-900 underline"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
+                {/* Profile Picture Rejection Notification */}
+                {profile.notifications && profile.notifications.some(n => n.type === 'profile_picture_rejected' && !n.read) && (() => {
+                    const rejectionNotif = profile.notifications.find(n => n.type === 'profile_picture_rejected' && !n.read);
+                    return (
+                        <div className="mt-4 w-full bg-amber-50 border-2 border-amber-500 p-4 rounded-xl animate-in fade-in">
+                            <div className="flex items-start gap-3">
+                                <div className="bg-amber-500 text-white p-2 rounded-full flex-shrink-0">
+                                    <ImageIcon size={20} />
+                                </div>
+                                <div className="flex-1">
+                                    <h4 className="font-bold text-amber-900 text-sm">Profile Picture Rejected</h4>
+                                    <p className="text-xs text-amber-800 mt-1 font-medium">
+                                        Reason: {rejectionNotif.message}
+                                    </p>
+                                    <p className="text-xs text-amber-700 mt-2">
+                                        Please upload a different profile picture that meets our guidelines.
+                                    </p>
+                                    <div className="flex gap-2 mt-3">
+                                        <button
+                                            onClick={() => {
+                                                setIsEditing(true);
+                                                // Auto-scroll or focus on photo upload
+                                            }}
+                                            className="text-xs font-bold bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 transition-colors"
+                                        >
+                                            Upload New Photo
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                // Mark notification as read
+                                                const updatedNotifications = profile.notifications.map(n =>
+                                                    n.type === 'profile_picture_rejected' ? { ...n, read: true } : n
+                                                );
+                                                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), {
+                                                    notifications: updatedNotifications
+                                                });
+                                            }}
+                                            className="text-xs font-bold text-amber-700 hover:text-amber-900 underline"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
             </div>
             <div className="space-y-2 mb-8">
                 <ProfileLink icon={Settings} label="Settings" onClick={() => onNavigate('settings')} />
@@ -6169,10 +6420,401 @@ const WorkCalendar = ({ user, profile, onBack, showToast }) => {
 };
 
 const AdminPanel = ({ user, onBack, showToast }) => {
-    const handleVerifySelf = async () => { await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', user.uid), { verified: true }); showToast("Verified!", "success"); onBack(); };
+    const [activeSection, setActiveSection] = useState(null);
+    const [activeTab, setActiveTab] = useState('tradieVerification');
+    const [verificationRequests, setVerificationRequests] = useState([]);
+    const [profilePictureRequests, setProfilePictureRequests] = useState([]);
+    const [selectedRequest, setSelectedRequest] = useState(null);
+    const [selectedPicture, setSelectedPicture] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [showRejectModal, setShowRejectModal] = useState(false);
+    const [rejectionReason, setRejectionReason] = useState('');
+    const [requestToReject, setRequestToReject] = useState(null);
+    const [showCropModal, setShowCropModal] = useState(false);
+    const [cropData, setCropData] = useState({ x: 0, y: 0, width: 100, height: 100 });
+
+    // Check if user is admin
+    const isAdmin = user?.email === ADMIN_EMAIL;
+
+    // Fetch verification requests
+    useEffect(() => {
+        if (!user || !db || !isAdmin) return;
+        
+        const q = query(
+            collection(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests'),
+            where('status', '==', 'pending'),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setVerificationRequests(requests);
+        }, (error) => {
+            console.error("Error fetching verification requests:", error);
+            showToast("Failed to load verification requests. Check Firebase rules.", "error");
+        });
+        
+        return () => unsub();
+    }, [user, isAdmin]);
+
+    // Fetch profile picture requests
+    useEffect(() => {
+        if (!user || !db || !isAdmin) return;
+        
+        const q = query(
+            collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'),
+            where('status', '==', 'pending'),
+            orderBy('createdAt', 'desc')
+        );
+        
+        const unsub = onSnapshot(q, (snapshot) => {
+            const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setProfilePictureRequests(requests);
+        }, (error) => {
+            console.error("Error fetching profile picture requests:", error);
+        });
+        
+        return () => unsub();
+    }, [user, isAdmin]);
+
+    // Approve verification
+    const handleApprove = async (requestId, tradieUid) => {
+        setLoading(true);
+        try {
+            const request = verificationRequests.find(r => r.id === requestId);
+            
+            // Extract metadata from uploaded documents before deletion
+            const verificationMetadata = {
+                documentType: 'CSCS/ECS Card',
+                trade: request?.trade || 'Not specified',
+                tradieName: request?.tradieName || 'Unknown',
+                verifiedAt: new Date().toISOString(),
+                verifiedBy: user.uid,
+                verifiedByEmail: user.email,
+                verificationMethod: 'Document Upload',
+                submittedAt: request?.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
+                // Store references to original upload locations (for audit trail)
+                originalUploadPaths: {
+                    front: request?.cardImageUrl ? new URL(request.cardImageUrl).pathname : null,
+                    back: request?.cardImageBackUrl ? new URL(request.cardImageBackUrl).pathname : null
+                },
+                notes: request?.notes || ''
+            };
+
+            // Update the verification request to approved
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
+                status: 'approved',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp(),
+                documentsDeleted: true
+            });
+
+            // Update tradie profile with verification status and metadata
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', tradieUid), {
+                verified: true,
+                verifiedAt: serverTimestamp(),
+                verificationMetadata: verificationMetadata,
+                // Add notification for the user
+                notifications: arrayUnion({
+                    type: 'verification_approved',
+                    title: 'Verification Approved!',
+                    message: 'Your tradie verification has been approved. You now have a verified badge on your profile.',
+                    timestamp: serverTimestamp(),
+                    read: false,
+                    icon: 'check-circle'
+                })
+            });
+
+            // Delete uploaded images from Firebase Storage
+            try {
+                if (request?.cardImageUrl) {
+                    const frontRef = storageRef(storage, new URL(request.cardImageUrl).pathname);
+                    await deleteObject(frontRef);
+                }
+                if (request?.cardImageBackUrl) {
+                    const backRef = storageRef(storage, new URL(request.cardImageBackUrl).pathname);
+                    await deleteObject(backRef);
+                }
+                console.log("Verification documents deleted successfully");
+            } catch (deleteError) {
+                console.error("Error deleting verification documents:", deleteError);
+                // Continue even if deletion fails - verification is still approved
+            }
+
+            showToast("Tradie verified! Documents deleted, metadata stored.", "success");
+            setSelectedRequest(null);
+        } catch (error) {
+            console.error("Error approving verification:", error);
+            showToast("Failed to approve verification", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reject verification
+    const handleReject = async (requestId, reason = '') => {
+        setLoading(true);
+        try {
+            const request = verificationRequests.find(r => r.id === requestId);
+            
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'verification_requests', requestId), {
+                status: 'rejected',
+                rejectionReason: reason,
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp()
+            });
+
+            // Add rejection notification to user profile
+            if (request?.tradieUid) {
+                await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', request.tradieUid), {
+                    verificationStatus: 'rejected',
+                    notifications: arrayUnion({
+                        type: 'verification_rejected',
+                        title: 'Verification Rejected',
+                        message: reason || 'Your verification was rejected. Please review and resubmit with correct documents.',
+                        timestamp: serverTimestamp(),
+                        read: false,
+                        icon: 'x-circle'
+                    })
+                });
+            }
+
+            showToast("Verification request rejected", "success");
+            setSelectedRequest(null);
+            setShowRejectModal(false);
+            setRejectionReason('');
+            setRequestToReject(null);
+        } catch (error) {
+            console.error("Error rejecting verification:", error);
+            showToast("Failed to reject verification", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+    
+    // Open reject modal
+    const openRejectModal = (request) => {
+        setRequestToReject(request);
+        setShowRejectModal(true);
+    };
+    
+    // Confirm rejection
+    const confirmReject = () => {
+        if (!rejectionReason.trim()) {
+            showToast("Please provide a reason for rejection", "error");
+            return;
+        }
+        handleReject(requestToReject.id, rejectionReason);
+    };
+
+    // Approve profile picture
+    const handleApproveProfilePicture = async (requestId, userId) => {
+        setLoading(true);
+        try {
+            // Update the request status
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests', requestId), {
+                status: 'approved',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp()
+            });
+
+            // Add approval notification to user's profile
+            const userProfileRef = doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId);
+            const userProfileSnap = await getDoc(userProfileRef);
+            const existingNotifications = userProfileSnap.data()?.notifications || [];
+            
+            await updateDoc(userProfileRef, {
+                notifications: [
+                    {
+                        type: 'profile_picture_approved',
+                        message: 'Your profile picture has been approved!',
+                        timestamp: new Date(),
+                        read: false
+                    },
+                    ...existingNotifications
+                ]
+            });
+
+            showToast("Profile picture approved", "success");
+            setSelectedPicture(null);
+        } catch (error) {
+            console.error("Error approving profile picture:", error);
+            showToast("Failed to approve profile picture", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Reject profile picture
+    const handleRejectProfilePicture = async (requestId, userId, reason) => {
+        setLoading(true);
+        try {
+            const request = profilePictureRequests.find(r => r.id === requestId);
+            
+            // Update request status
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests', requestId), {
+                status: 'rejected',
+                reviewedBy: user.uid,
+                reviewedAt: serverTimestamp(),
+                rejectionReason: reason
+            });
+
+            // Delete the profile picture from user's profile
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId), {
+                primaryPhoto: null
+            });
+
+            // Add rejection notification to user's profile
+            const userProfileRef = doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', userId);
+            const userProfileSnap = await getDoc(userProfileRef);
+            const existingNotifications = userProfileSnap.data()?.notifications || [];
+            
+            await updateDoc(userProfileRef, {
+                notifications: [
+                    {
+                        type: 'profile_picture_rejected',
+                        message: 'Your profile picture was rejected',
+                        reason: reason,
+                        timestamp: new Date(),
+                        read: false
+                    },
+                    ...existingNotifications
+                ]
+            });
+
+            showToast("Profile picture rejected and deleted", "success");
+            setSelectedPicture(null);
+            setShowRejectModal(false);
+            setRejectionReason('');
+            setRequestToReject(null);
+        } catch (error) {
+            console.error("Error rejecting profile picture:", error);
+            showToast("Failed to reject profile picture", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Open reject modal for profile pictures
+    const openRejectModalProfilePicture = (request) => {
+        setRequestToReject(request);
+        setShowRejectModal(true);
+    };
+
+    // Confirm profile picture rejection
+    const confirmRejectProfilePicture = () => {
+        if (!rejectionReason.trim()) {
+            showToast("Please provide a reason for rejection", "error");
+            return;
+        }
+        handleRejectProfilePicture(requestToReject.id, requestToReject.userId, rejectionReason);
+    };
+
+    // Open crop modal for profile picture
+    const openCropModal = (picture) => {
+        setSelectedPicture(picture);
+        setShowCropModal(true);
+        // Reset crop data to center
+        setCropData({ x: 10, y: 10, width: 80, height: 80 });
+    };
+
+    // Save cropped image
+    const handleSaveCrop = async () => {
+        if (!selectedPicture) return;
+        
+        setLoading(true);
+        try {
+            // Create canvas to crop the image
+            const img = new Image();
+            img.src = selectedPicture.photoData;
+            
+            await new Promise((resolve) => {
+                img.onload = resolve;
+            });
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Calculate actual pixel values from percentages
+            const cropX = (cropData.x / 100) * img.width;
+            const cropY = (cropData.y / 100) * img.height;
+            const cropWidth = (cropData.width / 100) * img.width;
+            const cropHeight = (cropData.height / 100) * img.height;
+            
+            canvas.width = cropWidth;
+            canvas.height = cropHeight;
+            
+            // Draw cropped portion
+            ctx.drawImage(
+                img,
+                cropX, cropY, cropWidth, cropHeight,
+                0, 0, cropWidth, cropHeight
+            );
+            
+            // Convert to base64 and compress to 30KB
+            let croppedImage = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Use the same compression function
+            const compressImage = (base64Image, targetSizeBytes) => {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        const BASE64_SIZE_RATIO = 0.75;
+                        const currentSize = base64Image.length * BASE64_SIZE_RATIO;
+                        
+                        if (currentSize > targetSizeBytes) {
+                            const scaleFactor = Math.sqrt(targetSizeBytes / currentSize) * 0.85;
+                            width = Math.max(100, Math.floor(width * scaleFactor));
+                            height = Math.max(100, Math.floor(height * scaleFactor));
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        
+                        let quality = 0.8;
+                        let result = canvas.toDataURL('image/jpeg', quality);
+                        
+                        while (result.length * BASE64_SIZE_RATIO > targetSizeBytes && quality > 0.1) {
+                            quality -= 0.05;
+                            result = canvas.toDataURL('image/jpeg', quality);
+                        }
+                        
+                        resolve(result);
+                    };
+                    img.src = base64Image;
+                });
+            };
+            
+            croppedImage = await compressImage(croppedImage, 30 * 1024);
+            
+            // Save cropped image to user's profile
+            await updateDoc(doc(db, 'artifacts', getAppId(), 'public', 'data', 'profiles', selectedPicture.userId), {
+                primaryPhoto: croppedImage
+            });
+            
+            // Approve the request
+            await handleApproveProfilePicture(selectedPicture.id, selectedPicture.userId);
+            
+            setShowCropModal(false);
+            setSelectedPicture(null);
+            showToast("Image cropped and approved!", "success");
+        } catch (error) {
+            console.error("Error cropping image:", error);
+            showToast("Failed to crop image", "error");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Handle seed data (for testing)
     const handleSeedData = async () => {
-        // Updated mock data structure with varied GPS locations for distance testing
-        // Centered around London (51.5074, -0.1278) with varying distances
         const dummyTradies = [
             { uid: 'mock_t1', name: 'Jake Builder', age: 29, role: 'tradie', trade: 'Carpenter', verified: true, location: 'Central London', latitude: 51.5074, longitude: -0.1278, bio: 'Reliable chippy. Quality work.', rate: 45, reviews: 12, rating: 4.8, sexuality: 'Gay', primaryPhoto: null },
             { uid: 'mock_t2', name: 'Mike Spark', age: 34, role: 'tradie', trade: 'Electrician', verified: true, location: 'East London', latitude: 51.5155, longitude: -0.0922, bio: 'Fully qualified sparky. 15 years experience.', rate: 60, reviews: 24, rating: 5.0, sexuality: 'Bi', primaryPhoto: null },
@@ -6192,15 +6834,665 @@ const AdminPanel = ({ user, onBack, showToast }) => {
         showToast("Test users created with GPS data!", "success");
     };
 
-    return (
-        <div className="h-screen bg-slate-50 p-4">
-            <div className="flex items-center gap-2 mb-6"><button onClick={onBack}><ArrowRight className="rotate-180" /></button><h1 className="font-bold text-xl">Admin Dashboard</h1></div>
-            <div className="bg-white rounded-xl shadow p-4 mb-4">
-                 <div className="space-y-3">
-                     <Button onClick={handleVerifySelf} variant="secondary" className="w-full gap-2"><CheckCircle size={18} /> Verify My Profile for test</Button>
-                     <Button onClick={handleSeedData} variant="primary" className="w-full gap-2"><Database size={18} /> Generate Test Users for test</Button>
-                 </div>
+    // Menu options
+    const menuOptions = [
+        {
+            id: 'verification',
+            title: 'Verification',
+            icon: ShieldCheck,
+            badge: (verificationRequests.length + profilePictureRequests.length) > 0 
+                ? verificationRequests.length + profilePictureRequests.length 
+                : null,
+            description: 'Manage user verification requests'
+        },
+        {
+            id: 'userManagement',
+            title: 'User Management',
+            icon: Users,
+            badge: null,
+            description: 'Manage users and platform tools'
+        },
+        {
+            id: 'testing',
+            title: 'Testing Tools',
+            icon: Database,
+            badge: null,
+            description: 'Development and testing utilities'
+        }
+    ];
+
+    // If not admin, show access denied
+    if (!isAdmin) {
+        return (
+            <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+                <div className="bg-white rounded-xl shadow-lg p-8 max-w-md w-full text-center">
+                    <Shield className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-2xl font-bold text-slate-900 mb-2">Access Denied</h2>
+                    <p className="text-slate-600 mb-6">You don't have permission to access the admin panel.</p>
+                    <Button onClick={onBack} variant="primary" className="w-full">
+                        Go Back
+                    </Button>
+                </div>
             </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-slate-50 pb-20">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-slate-900 to-slate-800 text-white sticky top-0 z-40 shadow-lg">
+                <div className="p-4 flex items-center gap-3">
+                    <button onClick={onBack} className="p-2 hover:bg-slate-700 rounded-lg transition-colors">
+                        <ArrowRight className="rotate-180" size={20} />
+                    </button>
+                    <div className="flex-1">
+                        <h1 className="text-xl font-bold">Admin Control Panel</h1>
+                        <p className="text-xs opacity-90">System Administration</p>
+                    </div>
+                    <Shield size={24} className="text-orange-500" />
+                </div>
+            </div>
+
+            <div className="p-4">
+                {/* Menu Options (when no section is selected) */}
+                {activeSection === null && (
+                    <div className="space-y-3">
+                        {menuOptions.map((option) => {
+                            const Icon = option.icon;
+                            return (
+                                <button
+                                    key={option.id}
+                                    onClick={() => setActiveSection(option.id)}
+                                    className="w-full bg-white rounded-xl shadow-sm border border-slate-100 p-4 hover:border-orange-500 hover:shadow-md transition-all text-left"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className="bg-orange-50 p-3 rounded-lg">
+                                                <Icon size={24} className="text-orange-600" />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-900">{option.title}</h3>
+                                                <p className="text-xs text-slate-600">{option.description}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {option.badge !== null && (
+                                                <span className="bg-red-500 text-white px-2.5 py-1 rounded-full text-xs font-bold">
+                                                    {option.badge}
+                                                </span>
+                                            )}
+                                            <ChevronRight size={20} className="text-slate-400" />
+                                        </div>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Verification Section */}
+                {activeSection === 'verification' && (
+                    <div className="space-y-4">
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Verification</h2>
+
+                        {/* Sub-tabs */}
+                        <div className="flex gap-2 overflow-x-auto mb-4">
+                            <button
+                                onClick={() => setActiveTab('tradieVerification')}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                                    activeTab === 'tradieVerification'
+                                        ? 'bg-orange-500 text-white'
+                                        : 'bg-white text-slate-700 border border-slate-200 hover:border-orange-500'
+                                }`}
+                            >
+                                Tradie Verification
+                                {verificationRequests.length > 0 && (
+                                    <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
+                                        {verificationRequests.length}
+                                    </span>
+                                )}
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('profilePictures')}
+                                className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
+                                    activeTab === 'profilePictures'
+                                        ? 'bg-orange-500 text-white'
+                                        : 'bg-white text-slate-700 border border-slate-200 hover:border-orange-500'
+                                }`}
+                            >
+                                Profile Pictures
+                                {profilePictureRequests.length > 0 && (
+                                    <span className="ml-2 bg-red-500 text-white px-2 py-0.5 rounded-full text-xs">
+                                        {profilePictureRequests.length}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Tradie Verification Content */}
+                        {activeTab === 'tradieVerification' && (
+                            <div className="space-y-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <h3 className="font-bold text-sm text-blue-900 mb-1">Tradie Verification</h3>
+                                            <p className="text-xs text-blue-800 leading-relaxed">
+                                                Review and approve tradie verification requests. Documents are encrypted and stored securely. After approval, metadata is saved to the user's profile.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {verificationRequests.length === 0 ? (
+                                    <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                                        <UserCheck size={48} className="mx-auto text-slate-300 mb-3" />
+                                        <h3 className="font-bold text-slate-900 mb-1">No Pending Requests</h3>
+                                        <p className="text-sm text-slate-600">All verification requests have been processed.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {verificationRequests.map((request) => (
+                                            <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                                                <div className="p-4">
+                                                    <div className="flex items-start justify-between mb-3">
+                                                        <div>
+                                                            <h3 className="font-bold text-slate-900">{request.tradieName}</h3>
+                                                            <p className="text-sm text-slate-600">{request.trade}</p>
+                                                            <p className="text-xs text-slate-400 mt-1">
+                                                                Submitted: {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                            </p>
+                                                </div>
+                                                <Badge type="pending" text="Pending" />
+                                            </div>
+
+                                            {/* Document Preview */}
+                                            {request.cardImageUrl && (
+                                                <div className="mb-3 bg-slate-50 rounded-lg p-2">
+                                                    <p className="text-xs font-bold text-slate-700 mb-2">Uploaded Document:</p>
+                                                    <img 
+                                                        src={request.cardImageUrl} 
+                                                        alt="Verification document" 
+                                                        className="w-full rounded border border-slate-200 cursor-pointer hover:opacity-90 transition-opacity"
+                                                        onClick={() => setSelectedRequest(request)}
+                                                    />
+                                                    <p className="text-xs text-slate-500 mt-1">Click to view full size</p>
+                                                </div>
+                                            )}
+
+                                            {request.notes && (
+                                                <div className="mb-3 bg-slate-50 rounded-lg p-3">
+                                                    <p className="text-xs font-bold text-slate-700 mb-1">Notes:</p>
+                                                    <p className="text-sm text-slate-600">{request.notes}</p>
+                                                </div>
+                                            )}
+
+                                            <div className="flex gap-2">
+                                                <Button
+                                                    variant="success"
+                                                    className="flex-1 text-sm py-2"
+                                                    onClick={() => handleApprove(request.id, request.tradieUid)}
+                                                    disabled={loading}
+                                                >
+                                                    <CheckCircle size={16} />
+                                                    Approve
+                                                </Button>
+                                                <Button
+                                                    variant="danger"
+                                                    className="flex-1 text-sm py-2"
+                                                    onClick={() => openRejectModal(request)}
+                                                    disabled={loading}
+                                                >
+                                                    <X size={16} />
+                                                    Reject
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Profile Pictures Tab */}
+                {activeTab === 'profilePictures' && (
+                    <div className="space-y-4">
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <Info size={20} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <h3 className="font-bold text-sm text-blue-900 mb-1">Profile Picture Review</h3>
+                                    <p className="text-xs text-blue-800 leading-relaxed">
+                                        Review user profile pictures. Approve appropriate photos or reject with a reason. Rejected photos are automatically deleted.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {profilePictureRequests.length === 0 ? (
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                                <CheckCircle size={48} className="mx-auto text-slate-300 mb-3" />
+                                <h3 className="font-bold text-slate-900 mb-1">No Pending Reviews</h3>
+                                <p className="text-sm text-slate-600">
+                                    All profile pictures have been reviewed.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                {profilePictureRequests.map((request) => (
+                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                                        <div className="flex gap-4">
+                                            {/* Left Column: Profile Picture + Buttons */}
+                                            <div className="flex flex-col gap-3" style={{width: '200px'}}>
+                                                {/* Profile Picture */}
+                                                <div 
+                                                    className="w-full h-48 bg-slate-100 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                                    onClick={() => setSelectedPicture(request)}
+                                                >
+                                                    <img
+                                                        src={request.photoData}
+                                                        alt={request.name}
+                                                        className="w-full h-full object-cover rounded-lg"
+                                                    />
+                                                </div>
+                                                
+                                                {/* Action Buttons */}
+                                                <div className="flex flex-row gap-2">
+                                                    <Button
+                                                        variant="success"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
+                                                        onClick={() => handleApproveProfilePicture(request.id, request.userId)}
+                                                        disabled={loading}
+                                                    >
+                                                        <CheckCircle size={14} />
+                                                        Approve
+                                                    </Button>
+                                                    <Button
+                                                        variant="primary"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
+                                                        onClick={() => openCropModal(request)}
+                                                        disabled={loading}
+                                                    >
+                                                        <Edit2 size={14} />
+                                                        Crop
+                                                    </Button>
+                                                    <Button
+                                                        variant="danger"
+                                                        className="flex items-center justify-center gap-1 flex-1 py-2 text-xs"
+                                                        onClick={() => openRejectModalProfilePicture(request)}
+                                                        disabled={loading}
+                                                    >
+                                                        <X size={14} />
+                                                        Reject
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Right Column: User Info */}
+                                            <div className="flex-1">
+                                                <h3 className="font-bold text-slate-900 text-lg mb-1">{request.name}</h3>
+                                                <p className="text-sm text-slate-500">
+                                                    @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+                    </div>
+                )}
+
+                {/* Testing Tools Section */}
+                {activeSection === 'testing' && (
+                    <div className="space-y-4">
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">Testing Tools</h2>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                            <h3 className="font-bold text-slate-900 mb-3">Development Tools</h3>
+                            <div className="space-y-3">
+                                <Button onClick={handleSeedData} variant="primary" className="w-full">
+                                    <Database size={18} />
+                                    Generate Test Users
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* User Management Section */}
+                {activeSection === 'userManagement' && (
+                    <div className="space-y-4">
+                        <button 
+                            onClick={() => setActiveSection(null)}
+                            className="flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors mb-2"
+                        >
+                            <ChevronLeft size={20} />
+                            <span className="text-sm font-medium">Back to Menu</span>
+                        </button>
+
+                        <h2 className="text-2xl font-bold text-slate-900 mb-4">User Management</h2>
+
+                        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                                <AlertCircle size={20} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <div>
+                                    <h3 className="font-bold text-sm text-amber-900 mb-1">Coming Soon</h3>
+                                    <p className="text-xs text-amber-800 leading-relaxed">
+                                        User management tools will be available in a future update. This will include viewing user metadata, managing accounts, and platform moderation tools.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white rounded-xl shadow-sm border border-slate-100 p-8 text-center">
+                            <Users size={48} className="mx-auto text-slate-300 mb-3" />
+                            <h3 className="font-bold text-slate-900 mb-1">User Management Tools</h3>
+                            <p className="text-sm text-slate-600">
+                                View verification metadata, manage user accounts, and access platform moderation tools.
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Full Image Modal */}
+            {selectedRequest && (
+                <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedRequest(null)}>
+                    <div className="relative max-w-4xl w-full" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setSelectedRequest(null)}
+                            className="absolute -top-12 right-0 bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                        <img
+                            src={selectedRequest.cardImageUrl}
+                            alt="Verification document full size"
+                            className="w-full rounded-lg"
+                        />
+                        <div className="bg-white rounded-lg p-4 mt-4">
+                            <h3 className="font-bold text-slate-900 mb-2">{selectedRequest.tradieName}</h3>
+                            <p className="text-sm text-slate-600 mb-3">{selectedRequest.trade}</p>
+                            <div className="flex gap-2">
+                                <Button
+                                    variant="success"
+                                    className="flex-1"
+                                    onClick={() => handleApprove(selectedRequest.id, selectedRequest.tradieUid)}
+                                    disabled={loading}
+                                >
+                                    <CheckCircle size={18} />
+                                    Approve Verification
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    className="flex-1"
+                                    onClick={() => openRejectModal(selectedRequest)}
+                                    disabled={loading}
+                                >
+                                    <X size={18} />
+                                    Reject
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Profile Picture Full View Modal */}
+            {selectedPicture && (
+                <div className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4" onClick={() => setSelectedPicture(null)}>
+                    <div className="relative max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+                        <button
+                            onClick={() => setSelectedPicture(null)}
+                            className="absolute -top-12 right-0 bg-white/10 hover:bg-white/20 text-white p-2 rounded-lg transition-colors"
+                        >
+                            <X size={24} />
+                        </button>
+                        <img
+                            src={selectedPicture.photoData}
+                            alt={selectedPicture.name}
+                            className="w-full rounded-lg"
+                        />
+                        <div className="bg-white rounded-lg p-4 mt-4">
+                            <h3 className="font-bold text-slate-900 mb-2">{selectedPicture.name}</h3>
+                            <p className="text-sm text-slate-600 mb-3">@{selectedPicture.username}</p>
+                            <div className="flex gap-2">
+                                <Button
+                                                    variant="success"
+                                    className="flex-1"
+                                    onClick={() => handleApproveProfilePicture(selectedPicture.id, selectedPicture.userId)}
+                                    disabled={loading}
+                                >
+                                    <CheckCircle size={18} />
+                                    Approve
+                                </Button>
+                                <Button
+                                    variant="primary"
+                                    className="flex-1"
+                                    onClick={() => {
+                                        setShowCropModal(true);
+                                        setCropData({ x: 10, y: 10, width: 80, height: 80 });
+                                    }}
+                                    disabled={loading}
+                                >
+                                    <Edit2 size={18} />
+                                    Crop
+                                </Button>
+                                <Button
+                                    variant="danger"
+                                    className="flex-1"
+                                    onClick={() => openRejectModalProfilePicture(selectedPicture)}
+                                    disabled={loading}
+                                >
+                                    <X size={18} />
+                                    Reject
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Rejection Reason Modal */}
+            {showRejectModal && requestToReject && (
+                <div className="fixed inset-0 bg-black/80 z-[110] flex items-center justify-center p-4" onClick={() => setShowRejectModal(false)}>
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-bold text-slate-900">
+                                {requestToReject.photoData ? 'Reject Profile Picture' : 'Reject Verification'}
+                            </h3>
+                            <button onClick={() => setShowRejectModal(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={20} className="text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        <p className="text-sm text-slate-600 mb-4">
+                            Please provide a reason for rejecting <strong>{requestToReject.name || requestToReject.tradieName}'s</strong> {requestToReject.photoData ? 'profile picture' : 'verification request'}.
+                            {requestToReject.photoData && ' The photo will be automatically deleted.'}
+                        </p>
+                        
+                        <div className="mb-4">
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Rejection Reason</label>
+                            <textarea
+                                value={rejectionReason}
+                                onChange={(e) => setRejectionReason(e.target.value)}
+                                placeholder={requestToReject.photoData 
+                                    ? "e.g., Inappropriate content, not a clear face photo, contains other people..."
+                                    : "e.g., Document is blurry, card expired, name doesn't match profile..."}
+                                rows={4}
+                                className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none text-sm"
+                            />
+                        </div>
+                        
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4">
+                            <div className="flex items-start gap-2">
+                                <Info size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-amber-800">
+                                    {requestToReject.photoData 
+                                        ? 'The user will receive a notification with your rejection reason. The photo will be deleted from their profile.'
+                                        : 'The rejection reason will be sent to the user as a notification.'}
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="flex-1"
+                                onClick={() => {
+                                    setShowRejectModal(false);
+                                    setRejectionReason('');
+                                    setRequestToReject(null);
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="danger"
+                                className="flex-1"
+                                onClick={requestToReject.photoData ? confirmRejectProfilePicture : confirmReject}
+                                disabled={loading || !rejectionReason.trim()}
+                            >
+                                {requestToReject.photoData ? 'Reject & Delete' : 'Confirm Rejection'}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Crop Modal */}
+            {showCropModal && selectedPicture && (
+                <div className="fixed inset-0 bg-black/90 z-[120] flex items-center justify-center p-4" onClick={() => setShowCropModal(false)}>
+                    <div className="bg-white rounded-2xl max-w-md w-full p-4" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-base font-bold text-slate-900">Crop Profile Picture</h3>
+                            <button onClick={() => setShowCropModal(false)} className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors">
+                                <X size={18} className="text-slate-500" />
+                            </button>
+                        </div>
+                        
+                        <p className="text-xs text-slate-600 mb-3">
+                            Adjust the crop area to frame the image properly. The cropped image will be automatically approved.
+                        </p>
+                        
+                        {/* Image Preview with Crop Overlay */}
+                        <div className="relative bg-slate-100 rounded-lg overflow-hidden mb-3" style={{ height: '300px' }}>
+                            <img
+                                src={selectedPicture.photoData}
+                                alt="Crop preview"
+                                className="w-full h-full object-contain"
+                            />
+                            <div 
+                                className="absolute border-2 border-orange-500 bg-orange-500/20"
+                                style={{
+                                    left: `${cropData.x}%`,
+                                    top: `${cropData.y}%`,
+                                    width: `${cropData.width}%`,
+                                    height: `${cropData.height}%`,
+                                    cursor: 'move'
+                                }}
+                            ></div>
+                        </div>
+                        
+                        {/* Crop Controls */}
+                        <div className="space-y-2 mb-3">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Horizontal Position</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={100 - cropData.width}
+                                    value={cropData.x}
+                                    onChange={(e) => setCropData(prev => ({ ...prev, x: parseInt(e.target.value) }))}
+                                    className="w-full"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Vertical Position</label>
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={100 - cropData.height}
+                                    value={cropData.y}
+                                    onChange={(e) => setCropData(prev => ({ ...prev, y: parseInt(e.target.value) }))}
+                                    className="w-full"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-700 mb-1">Crop Size (Width & Height)</label>
+                                <input
+                                    type="range"
+                                    min="20"
+                                    max="100"
+                                    value={cropData.width}
+                                    onChange={(e) => {
+                                        const size = parseInt(e.target.value);
+                                        setCropData(prev => ({ 
+                                            ...prev, 
+                                            width: size, 
+                                            height: size,
+                                            x: Math.min(prev.x, 100 - size),
+                                            y: Math.min(prev.y, 100 - size)
+                                        }));
+                                    }}
+                                    className="w-full"
+                                />
+                            </div>
+                        </div>
+                        
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-2 mb-3">
+                            <div className="flex items-start gap-2">
+                                <Info size={14} className="text-blue-600 flex-shrink-0 mt-0.5" />
+                                <p className="text-xs text-blue-800">
+                                    The cropped image will be saved to the user's profile and automatically approved.
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <div className="flex gap-2">
+                            <Button
+                                variant="ghost"
+                                className="flex-1 py-2"
+                                onClick={() => {
+                                    setShowCropModal(false);
+                                    setCropData({ x: 10, y: 10, width: 80, height: 80 });
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                variant="success"
+                                className="flex-1"
+                                onClick={handleSaveCrop}
+                                disabled={loading}
+                            >
+                                <CheckCircle size={18} />
+                                Save & Approve
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
