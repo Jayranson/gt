@@ -1298,7 +1298,7 @@ const LandingPage = ({ onLogin }) => {
 
   return (
     <div className="h-screen bg-slate-900 text-white flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, #f97316 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
+      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'radial-gradient(circle, #f97316 1px, transparent 1px)', backgroundSize: '20px 20px' }}></div>
       
       <div className="z-10 w-full max-w-md">
         {/* Logo */}
