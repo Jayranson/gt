@@ -278,11 +278,11 @@ const Button = ({ children, onClick, variant = 'primary', className = '', disabl
 
 const Input = ({ label, textarea, ...props }) => (
   <div className="mb-4">
-    {label && <label className="block text-sm font-medium text-slate-700 mb-1">{label}</label>}
+    {label && <label className="block text-sm font-medium text-slate-300 mb-1">{label}</label>}
     {textarea ? (
-      <textarea className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" {...props} />
+      <textarea className="w-full p-3 border border-slate-600 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400" {...props} />
     ) : (
-      <input className="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none" {...props} />
+      <input className="w-full p-3 border border-slate-600 bg-slate-700 text-white rounded-lg focus:ring-2 focus:ring-orange-500 focus:outline-none placeholder-slate-400" {...props} />
     )}
   </div>
 );
