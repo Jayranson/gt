@@ -754,6 +754,7 @@ export default function App() {
   const [acceptedTradieIds, setAcceptedTradieIds] = useState(new Set()); 
   const [chatBackView, setChatBackView] = useState('feed'); // Track where to go back from chat (default to feed)
   const [pendingJobsCount, setPendingJobsCount] = useState(0); // Count of pending job actions
+  const [profilePictureRequests, setProfilePictureRequests] = useState([]); // Profile picture verification requests
   
   // Notification dots state (true = show red dot, false = hidden)
   const [hasJobsNotification, setHasJobsNotification] = useState(false);
@@ -938,6 +939,20 @@ export default function App() {
     return () => unsub();
   }, [user]);
 
+  // Fetch Profile Picture Verification Requests (for blur detection)
+  useEffect(() => {
+    if (!db) return;
+    const q = query(collection(db, 'profile_picture_requests'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const requests = [];
+      snapshot.forEach(doc => {
+        requests.push({ id: doc.id, ...doc.data() });
+      });
+      setProfilePictureRequests(requests);
+    });
+    return () => unsub();
+  }, []);
+
   // Set Profile notification if email not verified
   useEffect(() => {
     if (user && !user.emailVerified) {
@@ -984,7 +999,7 @@ export default function App() {
     switch (view) {
       case 'landing': return <LandingPage onLogin={() => setView('onboarding')} />;
       case 'onboarding': return <Onboarding user={user} onComplete={() => setView('feed')} />;
-      case 'feed': return <Feed user={user} userProfile={userProfile} activeTab={activeTab} setActiveTab={setActiveTab} filter={feedFilter} clearFilter={() => setFeedFilter(null)} onMessage={(p) => { setSelectedProfile(p); setChatBackView('feed'); setView('chat'); }} onRequestJob={(p) => { setSelectedProfile(p); setView('requestJob'); }} acceptedTradieIds={acceptedTradieIds} onEnableLocation={updateLocation} showToast={showToast} />;
+      case 'feed': return <Feed user={user} userProfile={userProfile} activeTab={activeTab} setActiveTab={setActiveTab} filter={feedFilter} clearFilter={() => setFeedFilter(null)} onMessage={(p) => { setSelectedProfile(p); setChatBackView('feed'); setView('chat'); }} onRequestJob={(p) => { setSelectedProfile(p); setView('requestJob'); }} acceptedTradieIds={acceptedTradieIds} onEnableLocation={updateLocation} showToast={showToast} profilePictureRequests={profilePictureRequests} />;
       case 'services': return <ServiceFinder onSelectService={(trade) => { setFeedFilter(trade); setView('feed'); }} onPostJob={() => setView('postJobAdvert')} />;
       case 'postJobAdvert': return <PostJobAdvert user={user} onCancel={() => setView('services')} onSuccess={() => { setView('jobs'); showToast("Advert Posted!", "success"); }} />;
       case 'messages': return <ChatList user={user} onSelectChat={(p) => { setSelectedProfile(p); setChatBackView('messages'); setView('chat'); }} />;
@@ -1002,7 +1017,7 @@ export default function App() {
           console.error("Sign out error:", error);
           showToast("Failed to sign out", "error");
         }
-      }} showToast={showToast} onEnableLocation={updateLocation} onNavigate={setView} />;
+      }} showToast={showToast} onEnableLocation={updateLocation} onNavigate={setView} profilePictureRequests={profilePictureRequests} />;
       case 'settings': return <SettingsScreen user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
       case 'workCalendar': return <WorkCalendar user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
       case 'paymentsCredits': return <PaymentsCredits user={user} profile={userProfile} onBack={() => setView('profile')} showToast={showToast} />;
@@ -1552,7 +1567,7 @@ const Onboarding = ({ user, onComplete }) => {
   );
 };
 
-const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequestJob, filter, clearFilter, acceptedTradieIds, onEnableLocation, showToast }) => {
+const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequestJob, filter, clearFilter, acceptedTradieIds, onEnableLocation, showToast, profilePictureRequests = [] }) => {
   const [profiles, setProfiles] = useState([]);
   const [blockedUserIds, setBlockedUserIds] = useState(new Set());
   const [isCheckingVerification, setIsCheckingVerification] = useState(false);
@@ -1832,6 +1847,7 @@ const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequest
                             isCurrentUser={profile.uid === user.uid}
                             shouldBlur={profile.blurPhotos && profile.uid !== user.uid}
                             hideDistance={profile.hideDistance}
+                            profilePictureRequests={profilePictureRequests}
                         />
                     ))
                 ) : (
@@ -1854,6 +1870,7 @@ const Feed = ({ user, userProfile, activeTab, setActiveTab, onMessage, onRequest
                     onConnect={handleConnect}
                     onMessage={(p) => { setSelectedSocialProfile(null); onMessage(p); }}
                     hideDistance={selectedSocialProfile.hideDistance}
+                    profilePictureRequests={profilePictureRequests}
                 />
             )}
         </div>
@@ -3920,7 +3937,7 @@ const ChatRoom = ({ user, partner, onBack }) => {
 };
 
 // UPDATED: UserProfile now accepts onEnableLocation to fix the button in view
-const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onNavigate }) => {
+const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onNavigate, profilePictureRequests = [] }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState({});
     const [isVerifying, setIsVerifying] = useState(false); // Modal state for verification
@@ -4189,7 +4206,7 @@ const UserProfile = ({ user, profile, onLogout, showToast, onEnableLocation, onN
                 </div>
 
                 <div className={`relative mb-3 group -mt-16`}>
-                    <Avatar profile={isEditing ? editData : profile} size="xl" className="shadow-lg border-4 border-white w-24 h-24" showEditIcon={!isEditing} />
+                    <Avatar profile={isEditing ? editData : profile} size="xl" className="shadow-lg border-4 border-white w-24 h-24" showEditIcon={!isEditing} profilePictureRequests={profilePictureRequests} />
                     
                     {/* Busy/DND Badge */}
                     {profile.role === 'tradie' && !isEditing && (() => {
