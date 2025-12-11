@@ -7089,34 +7089,27 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                         ) : (
                             <div className="space-y-4">
                                 {profilePictureRequests.map((request) => (
-                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                                        <div className="flex flex-col md:flex-row gap-4 p-4">
-                                            {/* Profile Picture */}
-                                            <div 
-                                                className="w-full md:w-32 h-32 flex-shrink-0 bg-slate-100 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                                                onClick={() => setSelectedPicture(request)}
-                                            >
-                                                <img
-                                                    src={request.photoData}
-                                                    alt={request.name}
-                                                    className="w-full h-full object-cover rounded-lg"
-                                                />
-                                            </div>
-                                            
-                                            {/* User Info and Actions */}
-                                            <div className="flex-1 flex flex-col justify-between">
-                                                <div>
-                                                    <h3 className="font-bold text-slate-900 text-lg mb-1">{request.name}</h3>
-                                                    <p className="text-sm text-slate-500 mb-4">
-                                                        @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
-                                                    </p>
+                                    <div key={request.id} className="bg-white rounded-xl shadow-sm border border-slate-100 p-4">
+                                        <div className="flex gap-4">
+                                            {/* Left Column: Profile Picture + Buttons */}
+                                            <div className="flex flex-col gap-3" style={{width: '200px'}}>
+                                                {/* Profile Picture */}
+                                                <div 
+                                                    className="w-full h-48 bg-slate-100 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                                    onClick={() => setSelectedPicture(request)}
+                                                >
+                                                    <img
+                                                        src={request.photoData}
+                                                        alt={request.name}
+                                                        className="w-full h-full object-cover rounded-lg"
+                                                    />
                                                 </div>
                                                 
                                                 {/* Action Buttons */}
-                                                <div className="flex gap-3">
+                                                <div className="flex flex-col gap-2">
                                                     <Button
                                                         variant="success"
-                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        className="flex items-center justify-center gap-2 w-full py-2"
                                                         onClick={() => handleApproveProfilePicture(request.id, request.userId)}
                                                         disabled={loading}
                                                     >
@@ -7125,7 +7118,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                                     </Button>
                                                     <Button
                                                         variant="primary"
-                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        className="flex items-center justify-center gap-2 w-full py-2"
                                                         onClick={() => openCropModal(request)}
                                                         disabled={loading}
                                                     >
@@ -7134,7 +7127,7 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                                     </Button>
                                                     <Button
                                                         variant="danger"
-                                                        className="flex items-center gap-2 px-6 py-2"
+                                                        className="flex items-center justify-center gap-2 w-full py-2"
                                                         onClick={() => openRejectModalProfilePicture(request)}
                                                         disabled={loading}
                                                     >
@@ -7142,6 +7135,14 @@ const AdminPanel = ({ user, onBack, showToast }) => {
                                                         Reject
                                                     </Button>
                                                 </div>
+                                            </div>
+                                            
+                                            {/* Right Column: User Info */}
+                                            <div className="flex-1">
+                                                <h3 className="font-bold text-slate-900 text-lg mb-1">{request.name}</h3>
+                                                <p className="text-sm text-slate-500">
+                                                    @{request.username} • {request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                                                </p>
                                             </div>
                                         </div>
                                     </div>
