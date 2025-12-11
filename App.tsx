@@ -942,7 +942,7 @@ export default function App() {
   // Fetch Profile Picture Verification Requests (for blur detection)
   useEffect(() => {
     if (!db) return;
-    const q = query(collection(db, 'profile_picture_requests'));
+    const q = query(collection(db, 'artifacts', getAppId(), 'public', 'data', 'profile_picture_requests'));
     const unsub = onSnapshot(q, (snapshot) => {
       const requests = [];
       snapshot.forEach(doc => {
